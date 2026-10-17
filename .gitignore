@@ -3,3 +3,9 @@ __pycache__/
 *.pyc
 .env
 database.db
+bot_database.sqlite3
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.log

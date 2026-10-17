@@ -1,0 +1,167 @@
+import logging
+import asyncio
+from aiogram import Router, Bot, F
+from aiogram.types import Message, CallbackQuery, LinkPreviewOptions
+import config
+import database as db
+from parser import format_number
+from keyboards import get_screen2_keyboard
+from handlers import get_deal_buyer_info, safe_answer
+
+logger = logging.getLogger("nft_bot.deal_bot")
+deal_router = Router(name="deal_bot")
+
+# Filter: deal_router ONLY processes updates directed to DEAL_BOT_ID
+deal_router.message.filter(F.bot.id == config.DEAL_BOT_ID)
+deal_router.callback_query.filter(F.bot.id == config.DEAL_BOT_ID)
+
+
+@deal_router.message()
+async def handle_deal_bot_message(message: Message, bot: Bot):
+    """
+    В боте @TeIlegram0fferBot не должно быть ничего, кроме самой сделки!
+    Все входящие сообщения пользователя (/start, текст, команды) сразу удаляются,
+    чтобы диалог оставался идеально чистым.
+    """
+    # Удаляем входящее сообщение пользователя (/start, текст и т.д.)
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    text = (message.text or "").strip()
+
+    # Проверяем deep-link перехода по сделке: /start deal_123, /start accept_123
+    deal_id = None
+    if text.startswith("/start"):
+        parts = text.split()
+        if len(parts) > 1:
+            arg = parts[1]
+            for prefix in ("deal_", "accept_", "offer_"):
+                if arg.startswith(prefix):
+                    clean_id = arg.replace(prefix, "").strip()
+                    if clean_id.isdigit():
+                        deal_id = int(clean_id)
+                        break
+
+    if not deal_id:
+        # Если перешли без ссылки на сделку (пустой /start или случайный текст) — ничего не выводим
+        return
+
+    deal = await db.get_deal(deal_id)
+    if not deal:
+        await message.answer(
+            "❌ <b>Оффер не найден или срок его действия истёк.</b>",
+            parse_mode="HTML"
+        )
+        return
+
+    if deal.get("status") == "COMPLETED":
+        await message.answer(
+            "✅ <b>Эта сделка уже успешно завершена.</b>",
+            parse_mode="HTML"
+        )
+        return
+
+    if deal.get("status") in ("CANCELLED", "EXPIRED"):
+        await message.answer(
+            "❌ <b>Срок действия этого оффера истёк или он был отменён.</b>",
+            parse_mode="HTML"
+        )
+        return
+
+    # Переводим сделку в статус ACCEPTED (если еще не была принята)
+    user = message.from_user
+    if deal.get("status") in ("PENDING", "CONFIRMING"):
+        await db.accept_deal(deal_id, seller_id=user.id, seller_username=user.username)
+        await db.set_deal_status(deal_id, "ACCEPTED")
+        config.DEAL_LAST_TIMERS.pop(deal_id, None)
+        deal = await db.get_deal(deal_id)
+
+        # Уведомляем покупателя в основном боте (@sagefe1_bot)
+        try:
+            buyer_display, _, _ = await get_deal_buyer_info(deal)
+            formatted_num = format_number(deal["nft_number"])
+            curr_name = "GRAM" if deal.get("currency") == "GRAM" else "Stars"
+            seller_name = f"@{user.username}" if user.username else f"ID {user.id}"
+            notify_text = (
+                f"⚡️ <b>Продавец принял ваш оффер!</b>\n\n"
+                f"🎁 <b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_num}</b></a>\n"
+                f"⭐ <b>Сумма сделки:</b> <b>{deal['stars_amount']} {curr_name}</b>\n"
+                f"👤 <b>Продавец:</b> {seller_name}\n"
+                f"📍 <b>Статус:</b> Ожидается передача подарка получателю ({buyer_display})...\n\n"
+                f"<i>Как только подарок поступит, сделка завершится автоматически!</i>"
+            )
+            main_bot = Bot(token=config.BOT_TOKEN)
+            try:
+                await main_bot.send_message(
+                    chat_id=deal["buyer_id"],
+                    text=notify_text,
+                    parse_mode="HTML"
+                )
+            finally:
+                await main_bot.session.close()
+        except Exception as e_notify:
+            logger.debug(f"Could not notify buyer about accept: {e_notify}")
+
+    # Формируем Экран 2 (Ожидание передачи подарка)
+    buyer_display, target_url, is_premium = await get_deal_buyer_info(deal)
+    formatted_number = format_number(deal["nft_number"])
+    currency_name = "GRAM" if deal.get("currency") == "GRAM" else "Stars"
+    deal_lang = deal.get("lang", "RU")
+
+    if deal_lang == "ENG":
+        screen2_text = (
+            f'<a href="{deal["nft_url"]}">&#8203;</a>'
+            f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
+            f"<b>Deal amount:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
+            f"<b>Guarantor:</b> {buyer_display}\n"
+            f"<b>Status:</b> <b>Awaiting gift transfer</b>\n\n"
+            f"<blockquote><b>ATTENTION: Transfer the gift STRICTLY to official GUARANTOR ({buyer_display})! Do not send it to anyone else.</b></blockquote>\n\n"
+            f"<b>Transfer instructions:</b>\n"
+            f"1. Tap <b>«Send gift... ↗»</b> to open chat with guarantor {buyer_display}.\n"
+            f"2. In the profile, select gift <b>{deal['nft_name']} #{formatted_number}</b> and confirm transfer in Telegram for 25 stars.\n"
+            f"3. Return to this chat and tap <b>«Gift sent»</b>.\n\n"
+            f"<b>The system will automatically verify receipt and credit {currency_name} to your balance.</b>"
+        )
+    else:
+        screen2_text = (
+            f'<a href="{deal["nft_url"]}">&#8203;</a>'
+            f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
+            f"<b>Сумма сделки:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
+            f"<b>Гарант сделки:</b> {buyer_display}\n"
+            f"<b>Статус:</b> <b>Ожидание передачи подарка</b>\n\n"
+            f"<blockquote><b>ВНИМАНИЕ: Передавать подарок нужно СТРОГО ГАРАНТУ ({buyer_display})! Ни в коем случае не отправляйте подарок другим лицам.</b></blockquote>\n\n"
+            f"<b>Порядок передачи:</b>\n"
+            f"1. Нажмите кнопку <b>«Отправить подарок... ↗»</b>, чтобы открыть диалог с гарантом {buyer_display}.\n"
+            f"2. В открывшемся профиле выберите подарок <b>{deal['nft_name']} #{formatted_number}</b> и подтвердите системную передачу Telegram за 25 звёзд.\n"
+            f"3. Вернитесь в этот диалог и нажмите <b>«Подарок отправлен»</b>.\n\n"
+            f"<b>Система автоматически верифицирует поступление NFT и зачислит звёзды на баланс.</b>"
+        )
+
+    screen2_kb = get_screen2_keyboard(target_url=target_url, deal_id=deal_id, lang=deal_lang)
+    link_opts = LinkPreviewOptions(
+        url=deal["nft_url"],
+        prefer_large_media=True,
+        show_above_text=True
+    )
+
+    await message.answer(
+        screen2_text,
+        reply_markup=screen2_kb,
+        link_preview_options=link_opts,
+        parse_mode="HTML"
+    )
+
+
+@deal_router.callback_query(F.data.startswith("sent:"))
+async def handle_deal_bot_sent(callback: CallbackQuery, bot: Bot):
+    """
+    При нажатии 'Подарок отправлен' всегда выводится системное всплывающее уведомление (alert)
+    """
+    await safe_answer(callback, "Вы ещё не передали подарок!", show_alert=True)
+
+
+@deal_router.callback_query()
+async def handle_deal_bot_fallback_callback(callback: CallbackQuery, bot: Bot):
+    await safe_answer(callback)

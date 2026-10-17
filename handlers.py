@@ -2,6 +2,7 @@ import asyncio
 import re
 import logging
 from datetime import datetime, timezone
+from typing import Optional, Dict, Any, List, Union, Tuple
 from aiogram import Router, F, Bot
 from aiogram.types import (
     Message,

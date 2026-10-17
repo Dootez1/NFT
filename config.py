@@ -7,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # Load .env file
 load_dotenv(BASE_DIR / ".env")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8784158298:AAEfOVtvOjpFEzR_p8zl6_oOBQM-jlJwlaU").strip()
 
 # Admin IDs (comma-separated list of Telegram user IDs)
 raw_admins = os.getenv("ADMIN_IDS", "8524472788,7900020458,8270378207").split(",")

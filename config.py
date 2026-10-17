@@ -44,7 +44,11 @@ SUB_PRO_PRICE_TON = SUB_STANDARD_PRICE_TON
 SUB_PREMIUM_PRICE_TON = SUB_STANDARD_PRICE_TON
 
 # Database path
-DB_PATH = BASE_DIR / "bot_database.sqlite3"
+DATA_DIR_ENV = os.getenv("DATA_DIR")
+if DATA_DIR_ENV and Path(DATA_DIR_ENV).exists():
+    DB_PATH = Path(DATA_DIR_ENV) / "bot_database.sqlite3"
+else:
+    DB_PATH = BASE_DIR / "bot_database.sqlite3"
 
 # Default placeholder image if NFT preview fails to load
 DEFAULT_NFT_IMAGE = "https://telegram.org/file/464001097/1/mQyB5gqI7aY.100078/eb0f5aa1a5c60aa582"

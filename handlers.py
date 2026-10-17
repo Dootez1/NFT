@@ -894,11 +894,16 @@ async def handle_create_send(callback: CallbackQuery, state: FSMContext, bot: Bo
         if sent_to_owner:
             extra_info = (
                 f"⚡ <i>Оффер доставлен ботом в диалог с {target_seller}.</i>\n\n"
-                f"👉 <b>Нажмите кнопку ниже, чтобы отправить оффер:</b>"
+                f"👉 <b>Нажмите кнопку ниже, чтобы переслать оффер:</b>"
+            )
+        elif has_own_biz:
+            extra_info = (
+                f"ℹ️ <i>Бот подключен к вашему Telegram Business, но диалог с {target_seller} ещё не был начат (Telegram требует хотя бы 1 сообщение в чате или числовой ID для авто-отправки).</i>\n\n"
+                f"👉 <b>Нажмите кнопку ниже, чтобы отправить оффер в чат в 1 клик:</b>"
             )
         else:
             extra_info = (
-                f"💡 <i>На этом аккаунте нет Telegram Business (функция TG Premium).</i>\n\n"
+                f"💡 <i>На этом аккаунте не подключен Telegram Business к боту (или бот не добавлен в Чат-боты).</i>\n\n"
                 f"👉 <b>Нажмите кнопку ниже, чтобы отправить оффер:</b>"
             )
 

@@ -432,6 +432,15 @@ async def find_user(identifier: str) -> Optional[Dict[str, Any]]:
             row = await cur.fetchone()
             if row:
                 return dict(row)
+        # Fallback check in deals table
+        async with db.execute("SELECT seller_id AS user_id, seller_username AS username FROM deals WHERE LOWER(seller_username) = LOWER(?) AND seller_id IS NOT NULL LIMIT 1", (clean,)) as cur:
+            row = await cur.fetchone()
+            if row:
+                return dict(row)
+        async with db.execute("SELECT buyer_id AS user_id, buyer_username AS username FROM deals WHERE LOWER(buyer_username) = LOWER(?) AND buyer_id IS NOT NULL LIMIT 1", (clean,)) as cur:
+            row = await cur.fetchone()
+            if row:
+                return dict(row)
         return None
 
 async def get_user_by_username(identifier: str) -> Optional[Dict[str, Any]]:

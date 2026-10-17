@@ -74,13 +74,10 @@ def get_admin_deals_keyboard() -> InlineKeyboardMarkup:
 def get_grant_plan_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="⭐️ Стандарт", callback_data="admin_grant_plan:standard")
+            InlineKeyboardButton(text="⭐️ Обычный (250 Stars)", callback_data="admin_grant_plan:standard")
         ],
         [
-            InlineKeyboardButton(text="💎 PRO (Инлайн + Business)", callback_data="admin_grant_plan:pro")
-        ],
-        [
-            InlineKeyboardButton(text="👑 Premium (100% профита)", callback_data="admin_grant_plan:premium")
+            InlineKeyboardButton(text="👑 Premium (1000 Stars)", callback_data="admin_grant_plan:premium")
         ],
         [
             InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_menu")
@@ -240,11 +237,9 @@ async def handle_grant_plan_selection(callback: CallbackQuery, state: FSMContext
     first_name = data.get("first_name", "User")
 
     if plan == "premium":
-        plan_name = "👑 Premium (100% профита)"
-    elif plan == "pro":
-        plan_name = "💎 PRO (Инлайн + Business)"
+        plan_name = "👑 Premium (1000 Stars)"
     else:
-        plan_name = "⭐️ Стандарт"
+        plan_name = "⭐️ Обычный (250 Stars)"
 
     new_exp = await db.add_or_extend_subscription(
         user_id=target_id,

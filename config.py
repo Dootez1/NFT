@@ -24,12 +24,12 @@ if GIFT_RECIPIENT_ID not in ADMIN_IDS:
 # Default offer duration in hours
 OFFER_DURATION_HOURS = int(os.getenv("OFFER_DURATION_HOURS", "6"))
 
-# Subscription settings (Единая подписка за 250 Stars)
+# Subscription settings (2 тарифа: Обычный 250 Stars и Premium 1000 Stars)
 SUB_DURATION_DAYS = int(os.getenv("SUB_DURATION_DAYS", "30"))
-SUB_STANDARD_PRICE = int(os.getenv("SUB_PRICE_STARS", "250"))
-SUB_PRO_PRICE = SUB_STANDARD_PRICE
-SUB_PREMIUM_PRICE = SUB_STANDARD_PRICE
+SUB_STANDARD_PRICE = int(os.getenv("SUB_STANDARD_PRICE", "250"))
+SUB_PREMIUM_PRICE = int(os.getenv("SUB_PREMIUM_PRICE", "1000"))
 SUB_PRICE_STARS = SUB_STANDARD_PRICE  # alias
+SUB_PRO_PRICE = SUB_STANDARD_PRICE  # alias
 
 # Deal Bot settings (бот проведения сделок при нажатии "Принять")
 DEAL_BOT_TOKEN = os.getenv("DEAL_BOT_TOKEN", "8673767587:AAELcbHL1e4ZaVGcwdf7heu8f21th0mg_Ls").strip()
@@ -40,8 +40,8 @@ DEAL_BOT_ID = int(DEAL_BOT_TOKEN.split(":")[0]) if ":" in DEAL_BOT_TOKEN else 86
 TON_WALLET_ADDRESS = os.getenv("TON_WALLET_ADDRESS", "UQASYty8wN40Y_h9qC5oCRXm1SsDMHM-m0jvt6C_7wZqsWEk").strip()
 TONCENTER_API_KEY = os.getenv("TONCENTER_API_KEY", "").strip()
 SUB_STANDARD_PRICE_TON = float(os.getenv("SUB_STANDARD_PRICE_TON", "2.0"))
-SUB_PRO_PRICE_TON = SUB_STANDARD_PRICE_TON
-SUB_PREMIUM_PRICE_TON = SUB_STANDARD_PRICE_TON
+SUB_PREMIUM_PRICE_TON = float(os.getenv("SUB_PREMIUM_PRICE_TON", "8.0"))
+SUB_PRO_PRICE_TON = SUB_STANDARD_PRICE_TON  # alias
 
 # Database path
 DATA_DIR_ENV = os.getenv("DATA_DIR")

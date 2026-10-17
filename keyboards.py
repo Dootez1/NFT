@@ -1,7 +1,8 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import config
 from config import (
-    SUB_STANDARD_PRICE, SUB_STANDARD_PRICE_TON
+    SUB_STANDARD_PRICE, SUB_STANDARD_PRICE_TON,
+    SUB_PREMIUM_PRICE, SUB_PREMIUM_PRICE_TON
 )
 
 def get_screen1_keyboard(deal_id: int, lang: str = "RU", bot_username: str | None = None, is_business: bool = False) -> InlineKeyboardMarkup:
@@ -77,13 +78,15 @@ def get_create_confirm_keyboard(lang: str = "RU", is_premium: bool = False) -> I
     """
     Клавиатура подтверждения отправки оффера в /create:
     [ ❌ Отмена ]  [ ✅ Отправить ]
+    [ 👤 Другой получатель ] (только для Premium)
     [ Смена языка на ENG / RU ]
     """
     toggle_lang_text = "Смена языка на ENG" if lang == "RU" else "Смена языка на RU"
     cancel_text = "❌ Cancel" if lang == "ENG" else "❌ Отмена"
     send_text = "✅ Send" if lang == "ENG" else "✅ Отправить"
+    recipient_text = "👤 Other recipient" if lang == "ENG" else "👤 Другой получатель"
 
-    return InlineKeyboardMarkup(inline_keyboard=[
+    rows = [
         [
             InlineKeyboardButton(
                 text=cancel_text,
@@ -93,14 +96,25 @@ def get_create_confirm_keyboard(lang: str = "RU", is_premium: bool = False) -> I
                 text=send_text,
                 callback_data="create_send"
             )
-        ],
-        [
-            InlineKeyboardButton(
-                text=toggle_lang_text,
-                callback_data="create_toggle_lang"
-            )
         ]
+    ]
+
+    if is_premium:
+        rows.append([
+            InlineKeyboardButton(
+                text=recipient_text,
+                callback_data="create_change_recipient"
+            )
+        ])
+
+    rows.append([
+        InlineKeyboardButton(
+            text=toggle_lang_text,
+            callback_data="create_toggle_lang"
+        )
     ])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def get_screen2_keyboard(target_url: str, deal_id: int, lang: str = "RU") -> InlineKeyboardMarkup:
     """
@@ -174,13 +188,19 @@ def get_profile_keyboard() -> InlineKeyboardMarkup:
 
 def get_sub_menu_keyboard(current_plan: str | None = None) -> InlineKeyboardMarkup:
     """
-    Клавиатура подписки (единый тариф 250 звёзд)
+    Клавиатура подписки (2 тарифа: Обычный 250 звёзд и Premium 1000 звёзд)
     """
     kb = [
         [
             InlineKeyboardButton(
-                text=f"⭐️ Оформить подписку ({SUB_STANDARD_PRICE} ⭐️ / {SUB_STANDARD_PRICE_TON} TON)",
+                text=f"⭐️ Обычный ({SUB_STANDARD_PRICE} ⭐️ / {SUB_STANDARD_PRICE_TON} TON)",
                 callback_data="select_plan:standard"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"👑 Premium ({SUB_PREMIUM_PRICE} ⭐️ / {SUB_PREMIUM_PRICE_TON} TON)",
+                callback_data="select_plan:premium"
             )
         ],
         [
@@ -191,10 +211,14 @@ def get_sub_menu_keyboard(current_plan: str | None = None) -> InlineKeyboardMark
 
 def get_plan_payment_method_keyboard(plan: str = "standard") -> InlineKeyboardMarkup:
     """
-    Клавиатура выбора способа оплаты единой подписки 250 Stars
+    Клавиатура выбора способа оплаты тарифа (Обычный 250 Stars или Premium 1000 Stars)
     """
-    stars_price = SUB_STANDARD_PRICE
-    ton_price = SUB_STANDARD_PRICE_TON
+    if plan == "premium":
+        stars_price = SUB_PREMIUM_PRICE
+        ton_price = SUB_PREMIUM_PRICE_TON
+    else:
+        stars_price = SUB_STANDARD_PRICE
+        ton_price = SUB_STANDARD_PRICE_TON
 
     return InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -210,7 +234,7 @@ def get_plan_payment_method_keyboard(plan: str = "standard") -> InlineKeyboardMa
             )
         ],
         [
-            InlineKeyboardButton(text="🔙 Назад", callback_data="menu_sub")
+            InlineKeyboardButton(text="🔙 Назад к тарифам", callback_data="menu_sub")
         ]
     ])
 

@@ -102,7 +102,7 @@ class CreateOfferStates(StatesGroup):
 
 def build_confirm_card_text(nft_data: dict, price: int, currency: str, lang: str, recipient: str = None) -> str:
     formatted_number = format_number(nft_data.get("number", "1"))
-    guarantor = config.GIFT_RECIPIENT or "@DealNftOffer"
+    guarantor = recipient or config.GIFT_RECIPIENT or "@DealNftOffer"
     if lang == "ENG":
         currency_word = "Stars" if currency == "STARS" else "GRAM"
         return (
@@ -110,7 +110,7 @@ def build_confirm_card_text(nft_data: dict, price: int, currency: str, lang: str
             f'<tg-emoji emoji-id="5773677501825945508">🎁</tg-emoji> Gift: <a href="{nft_data.get("url", "")}"><b>{nft_data.get("name", "Telegram Gift")} #{formatted_number}</b></a>\n'
             f'<tg-emoji emoji-id="6028338546736107668">⭐️</tg-emoji> Price: <b>{price} {currency_word}</b>\n'
             f'<tg-emoji emoji-id="5776233299424843260">🌐</tg-emoji> Offer language: <b>English</b>\n'
-            f'<tg-emoji emoji-id="6032994772321309200">👤</tg-emoji> Guarantor: <b>{guarantor}</b>\n\n'
+            f'<tg-emoji emoji-id="6032994772321309200">👤</tg-emoji> Recipient: <b>{guarantor}</b>\n\n'
             'Send?'
         )
     else:
@@ -120,7 +120,7 @@ def build_confirm_card_text(nft_data: dict, price: int, currency: str, lang: str
             f'<tg-emoji emoji-id="5773677501825945508">🎁</tg-emoji> Подарок: <a href="{nft_data.get("url", "")}"><b>{nft_data.get("name", "Telegram Gift")} #{formatted_number}</b></a>\n'
             f'<tg-emoji emoji-id="6028338546736107668">⭐️</tg-emoji> Цена: <b>{price} {currency_word}</b>\n'
             f'<tg-emoji emoji-id="5776233299424843260">🌐</tg-emoji> Язык оффера: <b>Русский</b>\n'
-            f'<tg-emoji emoji-id="6032994772321309200">👤</tg-emoji> Гарант: <b>{guarantor}</b>\n\n'
+            f'<tg-emoji emoji-id="6032994772321309200">👤</tg-emoji> Получатель: <b>{guarantor}</b>\n\n'
             'Отправить?'
         )
 
@@ -134,8 +134,8 @@ async def build_profile_text(user, bot: Bot) -> str:
     bot_uname = bot_info.username or "bot"
 
     if is_admin:
-        sub_status = "👑 <b>Администратор</b> (Бессрочный PRO доступ)"
-        plan_desc = "Тариф: <b>💎 PRO (Инлайн + Business)</b>"
+        sub_status = "👑 <b>Администратор</b> (Бессрочный доступ)"
+        plan_desc = "Тариф: <b>👑 Premium (Полный доступ)</b>"
         time_desc = "Срок: <b>Не ограничен</b>"
     elif sub:
         now = datetime.now(timezone.utc)
@@ -144,18 +144,19 @@ async def build_profile_text(user, bot: Bot) -> str:
         except Exception:
             exp_dt = now
 
+        p_name = "👑 <b>Premium (1000 ⭐️)</b>" if sub.get("plan") == "premium" else "⭐️ <b>Обычный (250 ⭐️)</b>"
         if exp_dt > now:
             sub_status = "🟢 <b>Активна</b>"
-            plan_desc = f"Тариф: <b>Полный доступ ({SUB_STANDARD_PRICE} ⭐️)</b>"
+            plan_desc = f"Тариф: {p_name}"
             time_desc = f"Действует до: <b>{format_date_display(sub['expires_at'])}</b>"
         else:
             sub_status = "🔴 <b>Истекла</b>"
-            plan_desc = "Тариф: <b>Полный доступ</b>"
+            plan_desc = f"Тариф: {p_name}"
             time_desc = f"Закончилась: <b>{format_date_display(sub['expires_at'])}</b>"
     else:
         sub_status = "⚪️ <b>Не активна</b>"
         plan_desc = "Тариф: <i>Отсутствует</i>"
-        time_desc = f"<i>Оформите подписку за {SUB_STANDARD_PRICE} ⭐️ для создания офферов</i>"
+        time_desc = f"<i>Оформите тариф Обычный (250 ⭐️) или Premium (1000 ⭐️)</i>"
 
     username_str = f"@{user.username}" if user.username else "—"
     first_name_str = user.first_name or "Пользователь"
@@ -938,21 +939,28 @@ async def handle_subscription_view(event: Message | CallbackQuery):
 
     if is_active and sub:
         date_str = format_date_display(sub["expires_at"])
+        p_badge = "👑 <b>Premium</b>" if sub.get("plan") == "premium" else "⭐️ <b>Обычный</b>"
         status_text = (
+            f"• Ваш тариф: {p_badge}\n"
             f"• Статус подписки: 🟢 <b>Активна до {date_str}</b>\n\n"
         )
     else:
         status_text = "• Статус подписки: 🔴 <b>Не активна</b>\n\n"
 
     text = (
-        "⭐️ <b>Подписка на сервис</b>\n\n"
+        "⭐️ <b>Тарифы и подписка</b>\n\n"
         f"{status_text}"
-        f"<b>Стоимость: {SUB_STANDARD_PRICE} ⭐️ или {SUB_STANDARD_PRICE_TON} TON / {SUB_DURATION_DAYS} дней</b>\n\n"
+        "<b>Выберите подходящий тариф:</b>\n\n"
+        f"1. <b>⭐️ Обычный — {config.SUB_STANDARD_PRICE} ⭐️ ({config.SUB_STANDARD_PRICE_TON} TON) / {config.SUB_DURATION_DAYS} дней</b>\n"
         "• Создание официальных офферов (/create)\n"
         "• Доставка офферов через Telegram Business в личные диалоги\n"
-        "• Инлайн-режим отправки в любых чатах через <code>@bot ссылка цена</code>\n"
-        "• Безопасная передача подарка через гаранта\n\n"
-        "<i>Нажмите кнопку ниже для перехода к оплате:</i>"
+        "• Инлайн-режим отправки в любых чатах\n"
+        f"• Передача подарка строго официальному гаранту ({config.GIFT_RECIPIENT})\n\n"
+        f"2. <b>👑 Premium — {config.SUB_PREMIUM_PRICE} ⭐️ ({config.SUB_PREMIUM_PRICE_TON} TON) / {config.SUB_DURATION_DAYS} дней</b>\n"
+        "• Все функции обычного тарифа\n"
+        "• 👤 <b>Возможность указывать ЛЮБОГО своего получателя</b> (другой аккаунт/кошелёк) при отправке оффера\n"
+        "• Приоритетная поддержка и обработка\n\n"
+        "<i>Нажмите кнопку ниже для выбора тарифа:</i>"
     )
 
     keyboard = get_sub_menu_keyboard()
@@ -967,19 +975,33 @@ async def handle_subscription_view(event: Message | CallbackQuery):
 
 @router.callback_query(F.data.startswith("select_plan:"))
 async def handle_select_plan(callback: CallbackQuery):
-    plan = "standard"
-    stars_price = SUB_STANDARD_PRICE
-    ton_price = SUB_STANDARD_PRICE_TON
-    desc = (
-        "• Создание офферов через бота (/create)\n"
-        "• Доставка офферов через Telegram Business в личных переписках\n"
-        "• Инлайн-режим в любых чатах через <code>@bot ссылка цена</code>\n"
-        "• Безопасная передача подарка через гаранта\n"
-        f"• Срок действия: <b>{SUB_DURATION_DAYS} дней</b>"
-    )
+    plan = callback.data.split(":")[1] if ":" in callback.data else "standard"
+    if plan == "premium":
+        plan_title = "👑 <b>Тариф «Premium»</b>"
+        stars_price = config.SUB_PREMIUM_PRICE
+        ton_price = config.SUB_PREMIUM_PRICE_TON
+        desc = (
+            "• Создание офферов через бота (/create)\n"
+            "• Доставка офферов через Telegram Business в личных переписках\n"
+            "• Инлайн-режим в любых чатах через <code>@bot ссылка цена</code>\n"
+            "• 👤 <b>Возможность указывать ЛЮБОГО своего получателя подарка!</b>\n"
+            f"• Срок действия: <b>{config.SUB_DURATION_DAYS} дней</b>"
+        )
+    else:
+        plan = "standard"
+        plan_title = "⭐️ <b>Тариф «Обычный»</b>"
+        stars_price = config.SUB_STANDARD_PRICE
+        ton_price = config.SUB_STANDARD_PRICE_TON
+        desc = (
+            "• Создание офферов через бота (/create)\n"
+            "• Доставка офферов через Telegram Business в личных переписках\n"
+            "• Инлайн-режим в любых чатах через <code>@bot ссылка цена</code>\n"
+            f"• Передача подарка строго официальному гаранту ({config.GIFT_RECIPIENT})\n"
+            f"• Срок действия: <b>{config.SUB_DURATION_DAYS} дней</b>"
+        )
 
     text = (
-        f"⭐️ <b>Подписка на сервис</b>\n\n"
+        f"{plan_title}\n\n"
         f"{desc}\n\n"
         f"💰 <b>Стоимость:</b> <code>{stars_price} Stars</code> или <code>{ton_price} TON</code>\n\n"
         f"<i>Выберите способ оплаты:</i>"

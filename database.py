@@ -261,8 +261,8 @@ async def is_subscription_active(user_id: int, required_plan: str = "standard") 
             row = await cursor.fetchone()
             if not row:
                 return False
-            if required_plan in ("pro", "premium"):
-                return row["plan"] in ("pro", "premium")
+            if required_plan == "premium":
+                return row["plan"] == "premium"
             return True
 
 async def get_subscription(user_id: int) -> Optional[Dict[str, Any]]:

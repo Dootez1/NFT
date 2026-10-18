@@ -95,15 +95,6 @@ async def init_db():
             );
         """)
         await db.execute("""
-            CREATE TABLE IF NOT EXISTS referrals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                referrer_id INTEGER NOT NULL,
-                referred_user_id INTEGER NOT NULL UNIQUE,
-                reward_hours INTEGER DEFAULT 24,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        await db.execute("""
             CREATE TABLE IF NOT EXISTS worker_bots (
                 user_id INTEGER PRIMARY KEY,
                 bot_token TEXT NOT NULL,
@@ -143,7 +134,6 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_deals_seller ON deals(seller_id);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_subs_expires ON subscriptions(expires_at);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_charge ON payments_history(telegram_payment_charge_id);")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
 
         await db.commit()
@@ -160,27 +150,6 @@ async def register_user(user_id: int, username: Optional[str], first_name: str) 
         """, (user_id, username, first_name))
         await db.commit()
         return True
-
-async def register_referral(referrer_id: int, new_user_id: int) -> bool:
-    if referrer_id == new_user_id:
-        return False
-
-    async with get_write_db() as db:
-        try:
-            await db.execute("""
-                INSERT INTO referrals (referrer_id, referred_user_id, reward_hours)
-                VALUES (?, ?, 6)
-            """, (referrer_id, new_user_id))
-            await db.commit()
-            return True
-        except Exception:
-            return False
-
-async def get_referral_count(user_id: int) -> int:
-    async with get_db() as db:
-        async with db.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id = ?", (user_id,)) as cur:
-            row = await cur.fetchone()
-            return row[0] if row else 0
 
 async def add_or_extend_subscription_hours(
     user_id: int,
@@ -211,10 +180,10 @@ async def add_or_extend_subscription_hours(
     async with get_write_db() as db:
         await db.execute("""
             INSERT INTO subscriptions (user_id, username, first_name, plan, expires_at, last_payment_charge_id)
-            VALUES (?, ?, ?, ?, ?, 'REFERRAL_REWARD')
+            VALUES (?, ?, ?, ?, ?, 'BONUS')
             ON CONFLICT(user_id) DO UPDATE SET
                 expires_at = excluded.expires_at,
-                last_payment_charge_id = 'REFERRAL_REWARD'
+                last_payment_charge_id = 'BONUS'
         """, (user_id, username, first_name, plan, new_exp_str))
         await db.commit()
 
@@ -409,9 +378,6 @@ async def get_admin_stats() -> Dict[str, Any]:
         async with db.execute("SELECT COUNT(*) FROM deals WHERE status = 'COMPLETED'") as cur:
             completed_deals = (await cur.fetchone())[0]
 
-        async with db.execute("SELECT COUNT(*) FROM referrals") as cur:
-            total_referrals = (await cur.fetchone())[0]
-
         return {
             "total_users": total_users,
             "active_subs": active_subs,
@@ -420,8 +386,7 @@ async def get_admin_stats() -> Dict[str, Any]:
             "total_ton": total_ton,
             "total_ton_payments": total_ton_payments,
             "total_deals": total_deals,
-            "completed_deals": completed_deals,
-            "total_referrals": total_referrals
+            "completed_deals": completed_deals
         }
 
 async def get_all_user_ids() -> List[int]:

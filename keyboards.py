@@ -215,8 +215,7 @@ def get_profile_keyboard() -> InlineKeyboardMarkup:
     """
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="⭐️ Тарифы и оплата", callback_data="menu_sub"),
-            InlineKeyboardButton(text="🎁 Пригласить друга (+6ч)", callback_data="menu_referral")
+            InlineKeyboardButton(text="⭐️ Тарифы и оплата", callback_data="menu_sub")
         ],
         [
             InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")

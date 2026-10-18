@@ -133,10 +133,6 @@ async def build_profile_text(user, bot: Bot) -> str:
     user_id = user.id
     is_admin = user_id in config.ADMIN_IDS
     sub = await db.get_subscription(user_id)
-    ref_count = await db.get_referral_count(user_id)
-
-    bot_info = await bot.get_me()
-    bot_uname = bot_info.username or "bot"
 
     if is_admin:
         sub_status = "👑 <b>Администратор</b> (Бессрочный доступ)"
@@ -173,10 +169,7 @@ async def build_profile_text(user, bot: Bot) -> str:
         f"🏷 <b>Юзернейм:</b> {username_str}\n\n"
         f"⭐️ <b>Статус подписки:</b> {sub_status}\n"
         f"• {plan_desc}\n"
-        f"• {time_desc}\n\n"
-        f"👥 <b>Реферальная программа:</b>\n"
-        f"• Приглашено друзей: <b>{ref_count} чел.</b> (+{ref_count * 6} ч. к подписке)\n"
-        f"• Ваша ссылка: <code>https://t.me/{bot_uname}?start=ref_{user_id}</code>"
+        f"• {time_desc}"
     )
 
 @router.message(Command("profile"))
@@ -193,73 +186,12 @@ async def handle_menu_profile(callback: CallbackQuery, bot: Bot):
         await callback.message.answer(text, reply_markup=get_profile_keyboard(), parse_mode="HTML")
     await safe_answer(callback)
 
-@router.callback_query(F.data == "menu_referral")
-async def handle_menu_referral(callback: CallbackQuery, bot: Bot):
-    user_id = callback.from_user.id
-    ref_count = await db.get_referral_count(user_id)
-    bot_info = await bot.get_me()
-    bot_uname = bot_info.username or "bot"
-    ref_link = f"https://t.me/{bot_uname}?start=ref_{user_id}"
-
-    text = (
-        "🎁 <b>Реферальная программа</b>\n\n"
-        "Приглашайте друзей и получайте бесплатное время подписки!\n\n"
-        "• За каждого приглашённого пользователя: <b>+6 часов доступа</b>\n"
-        f"• Вы уже пригласили: <b>{ref_count} чел.</b> (+{ref_count * 6} ч.)\n\n"
-        "🔗 <b>Ваша персональная реферальная ссылка:</b>\n"
-        f"<code>{ref_link}</code> <i>(нажмите для копирования)</i>\n\n"
-        "<i>Отправьте эту ссылку друзьям или коллегам. Как только они запустят бота, вам сразу добавится бонусное время!</i>"
-    )
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="📤 Поделиться ссылкой",
-                url=f"https://t.me/share/url?url={ref_link}&text=Бот%20для%20безопасных%20офферов%20Telegram%20NFT"
-            )
-        ],
-        [
-            InlineKeyboardButton(text="👤 Назад в профиль", callback_data="menu_profile"),
-            InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
-        ]
-    ])
-    try:
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-    except Exception:
-        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
-    await safe_answer(callback)
-
 # --- MENU NAVIGATION ---
 
 @router.message(CommandStart())
 async def handle_start(message: Message, command: CommandObject, bot: Bot):
     user_id = message.from_user.id
     await db.register_user(user_id, message.from_user.username, message.from_user.first_name)
-
-    # Check referral code
-    if command and command.args and command.args.startswith("ref_"):
-        try:
-            ref_id_str = command.args.replace("ref_", "").strip()
-            if ref_id_str.isdigit():
-                ref_id = int(ref_id_str)
-                if ref_id != user_id:
-                    is_new = await db.register_referral(referrer_id=ref_id, new_user_id=user_id)
-                    if is_new:
-                        new_exp = await db.add_or_extend_subscription_hours(ref_id, hours=6)
-                        try:
-                            await bot.send_message(
-                                chat_id=ref_id,
-                                text=(
-                                    "🎉 <b>Новый пользователь перешёл по вашей реферальной ссылке!</b>\n\n"
-                                    "Вам начислено <b>+6 часов</b> подписки!\n"
-                                    f"Действует до: <b>{format_date_display(new_exp)}</b>"
-                                ),
-                                parse_mode="HTML"
-                            )
-                        except Exception:
-                            pass
-        except Exception as e_ref:
-            logger.debug(f"Referral processing error: {e_ref}")
 
     # Check deal / offer / accept deep-link
     if command and command.args and any(command.args.startswith(p) for p in ("deal_", "offer_", "accept_")):

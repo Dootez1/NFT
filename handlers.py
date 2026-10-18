@@ -1164,6 +1164,626 @@ async def handle_check_ton(callback: CallbackQuery, bot: Bot):
 
 
 
+async def get_deal_buyer_info(deal: dict) -> tuple[str, str, bool]:
+    recip = deal.get("recipient") or config.GIFT_RECIPIENT or "@DealNftOffer"
+    recip_str = str(recip).strip()
+    if recip_str.startswith("https://t.me/"):
+        clean_recip = recip_str.replace("https://t.me/", "").lstrip("@").strip("/")
+    elif recip_str.startswith("t.me/"):
+        clean_recip = recip_str.replace("t.me/", "").lstrip("@").strip("/")
+    else:
+        clean_recip = recip_str.lstrip("@").strip()
+
+    if not clean_recip:
+        clean_recip = "DealNftOffer"
+
+    if clean_recip.isdigit():
+        target_url = f"tg://user?id={clean_recip}"
+        buyer_display = f"ID:{clean_recip}"
+    else:
+        target_url = f"https://t.me/{clean_recip}"
+        buyer_display = f"@{clean_recip}"
+
+    return buyer_display, target_url, True
+
+async def safe_edit_deal_message(
+    bot: Bot,
+    deal: dict,
+    text: str,
+    reply_markup=None,
+    link_opts=None,
+    inline_message_id: str | None = None,
+    callback_message=None,
+    callback_from_user_id: int | None = None
+):
+    """
+    Безопасно обновляет сообщение оффера в любом типе доставки:
+    - Инлайн-сообщение (edit_message_text)
+    - Текстовое сообщение в бизнес-чате (edit_message_text)
+    - Фото-сообщение в бизнес-чате (edit_message_caption)
+    - Обычное личное сообщение бота (edit_message_text / edit_message_caption)
+    """
+    edited = False
+
+    # 1. Если клик был по инлайн-сообщению, обязательно редактируем его
+    if inline_message_id:
+        try:
+            await bot.edit_message_text(
+                inline_message_id=inline_message_id,
+                text=text,
+                reply_markup=reply_markup,
+                link_preview_options=link_opts,
+                parse_mode="HTML"
+            )
+            edited = True
+        except Exception as e_in:
+            logger.debug(f"Direct inline edit failed: {e_in}")
+
+    # 2. Если сделка отправлена через Telegram Business
+    biz_id = deal.get("business_connection_id") or (getattr(callback_message, "business_connection_id", None) if callback_message else None)
+    target_cid = deal.get("chat_id")
+    target_mid = deal.get("message_id")
+    buyer_id = deal.get("buyer_id")
+
+    if biz_id:
+        # Для Telegram Business chat_id ВСЕГДА должен быть ID собеседника (клиента), а не бизнес-аккаунта!
+        biz_chat_id = None
+        if target_cid and target_cid != buyer_id:
+            biz_chat_id = target_cid
+        elif callback_from_user_id and callback_from_user_id != buyer_id:
+            biz_chat_id = callback_from_user_id
+        elif deal.get("seller_id") and deal.get("seller_id") != buyer_id:
+            biz_chat_id = deal.get("seller_id")
+        elif callback_message and callback_message.chat and callback_message.chat.id != buyer_id:
+            biz_chat_id = callback_message.chat.id
+
+        biz_msg_id = (callback_message.message_id if callback_message else None) or target_mid
+
+        if biz_chat_id and biz_msg_id:
+            try:
+                await bot.edit_message_text(
+                    business_connection_id=biz_id,
+                    chat_id=biz_chat_id,
+                    message_id=biz_msg_id,
+                    text=text,
+                    reply_markup=reply_markup,
+                    link_preview_options=link_opts,
+                    parse_mode="HTML"
+                )
+                edited = True
+            except TelegramBadRequest as e_biz:
+                if "not modified" in str(e_biz).lower():
+                    edited = True
+                else:
+                    logger.warning(f"Business edit failed: {e_biz}")
+            except Exception as e_biz:
+                logger.warning(f"Business edit failed: {e_biz}")
+    else:
+        # Обычное личное сообщение бота
+        if callback_message:
+            try:
+                await callback_message.edit_text(
+                    text=text,
+                    reply_markup=reply_markup,
+                    link_preview_options=link_opts,
+                    parse_mode="HTML"
+                )
+                edited = True
+            except TelegramBadRequest as e_cb:
+                if "not modified" in str(e_cb).lower():
+                    edited = True
+                else:
+                    logger.debug(f"Callback message edit failed: {e_cb}")
+            except Exception as e_cb:
+                logger.debug(f"Callback message edit failed: {e_cb}")
+        elif target_cid and target_mid:
+            try:
+                await bot.edit_message_text(
+                    chat_id=target_cid,
+                    message_id=target_mid,
+                    text=text,
+                    reply_markup=reply_markup,
+                    link_preview_options=link_opts,
+                    parse_mode="HTML"
+                )
+                edited = True
+            except TelegramBadRequest as e_pm:
+                if "not modified" in str(e_pm).lower():
+                    edited = True
+                else:
+                    logger.debug(f"Direct PM edit failed: {e_pm}")
+            except Exception as e_pm:
+                logger.debug(f"Direct PM edit failed: {e_pm}")
+
+    # 3. Синхронизируем инлайн-сообщение сделки (если клик был не из него)
+    stored_inline_id = deal.get("inline_message_id")
+    if stored_inline_id and stored_inline_id != inline_message_id:
+        try:
+            await bot.edit_message_text(
+                inline_message_id=stored_inline_id,
+                text=text,
+                reply_markup=reply_markup,
+                link_preview_options=link_opts,
+                parse_mode="HTML"
+            )
+        except Exception as e_sin:
+            logger.debug(f"Stored inline edit failed: {e_sin}")
+
+# --- DEAL CALLBACK HANDLERS (SUPPORTS INLINE MESSAGES TOO) ---
+
+@router.callback_query(F.data.startswith("accept:"))
+async def handle_accept_callback(callback: CallbackQuery, bot: Bot):
+    deal_id = int(callback.data.split(":")[1])
+    deal = await db.get_deal(deal_id)
+
+    if not deal:
+        await safe_answer(callback, "Оффер не найден!", show_alert=True)
+        return
+
+    # Мгновенно подтверждаем получение callback, чтобы у пользователя не зависала кнопка
+    await safe_answer(callback)
+
+    if deal["status"] not in ("PENDING", "CONFIRMING"):
+        if deal["status"] != "ACCEPTED":
+            await safe_answer(callback, "Этот оффер уже был отклонён или истёк!", show_alert=True)
+            return
+
+    # Принимаем оффер и переводим в статус ACCEPTED (если еще не был принят)
+    user = callback.from_user
+    if deal["status"] in ("PENDING", "CONFIRMING"):
+        await db.accept_deal(deal_id, seller_id=user.id, seller_username=user.username)
+        await db.set_deal_status(deal_id, "ACCEPTED")
+        config.DEAL_LAST_TIMERS.pop(deal_id, None)
+        deal = await db.get_deal(deal_id)
+
+    buyer_display, target_url, is_premium = await get_deal_buyer_info(deal)
+    formatted_number = format_number(deal["nft_number"])
+    currency_name = "GRAM" if deal.get("currency") == "GRAM" else "Stars"
+    deal_lang = deal.get("lang", "RU")
+
+    # Экран 2 (Ожидание передачи подарка)
+    if deal_lang == "ENG":
+        screen2_text = (
+            f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
+            f"<b>Deal amount:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
+            f"<b>Recipient:</b> {buyer_display}\n"
+            f"<b>Status:</b> <b>Awaiting gift transfer</b>\n\n"
+            f"<blockquote><b>Please transfer the gift to recipient ({buyer_display}) to complete the deal.</b></blockquote>\n\n"
+            f"<b>Instructions:</b>\n"
+            f"1. Tap <b>«Send gift... ↗»</b> to open chat with {buyer_display}.\n"
+            f"2. In profile, select gift <b>{deal['nft_name']} #{formatted_number}</b> and confirm transfer.\n"
+            f"3. Return to this chat and tap <b>«Gift sent»</b>.\n\n"
+            f"<i>Funds will be credited once the transfer is confirmed.</i>"
+        )
+    else:
+        screen2_text = (
+            f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
+            f"<b>Сумма сделки:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
+            f"<b>Получатель:</b> {buyer_display}\n"
+            f"<b>Статус:</b> <b>Ожидание передачи подарка</b>\n\n"
+            f"<blockquote><b>Для завершения сделки передайте подарок получателю ({buyer_display}).</b></blockquote>\n\n"
+            f"<b>Порядок передачи:</b>\n"
+            f"1. Нажмите <b>«Отправить подарок... ↗»</b>, чтобы открыть диалог с {buyer_display}.\n"
+            f"2. В профиле выберите подарок <b>{deal['nft_name']} #{formatted_number}</b> и подтвердите передачу.\n"
+            f"3. Вернитесь в этот диалог и нажмите <b>«Подарок отправлен»</b>.\n\n"
+            f"<i>После подтверждения передачи подарка баланс будет пополнен.</i>"
+        )
+
+    screen2_kb = get_screen2_keyboard(target_url=target_url, deal_id=deal_id, lang=deal_lang)
+    link_opts = LinkPreviewOptions(
+        url=deal["nft_url"],
+        prefer_large_media=True,
+        show_above_text=True
+    )
+
+    # Редактируем сообщение оффера прямо в диалоге на Экран 2
+    await safe_edit_deal_message(
+        bot=bot,
+        deal=deal,
+        text=screen2_text,
+        reply_markup=screen2_kb,
+        link_opts=link_opts,
+        inline_message_id=callback.inline_message_id,
+        callback_message=callback.message,
+        callback_from_user_id=callback.from_user.id
+    )
+
+    # Уведомление покупателю в личные сообщения бота
+    try:
+        seller_name = f"@{user.username}" if user.username else f"ID {user.id}"
+        await bot.send_message(
+            chat_id=deal["buyer_id"],
+            text=(
+                f"⚡️ <b>Продавец принял ваш оффер!</b>\n\n"
+                f"🎁 <b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
+                f"⭐ <b>Сумма сделки:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
+                f"👤 <b>Продавец:</b> {seller_name}\n"
+                f"📍 <b>Статус:</b> Ожидается передача подарка получателю ({buyer_display})...\n\n"
+                f"<i>Как только подарок поступит, сделка завершится автоматически!</i>"
+            ),
+            parse_mode="HTML"
+        )
+    except Exception as e_notify:
+        logger.debug(f"Could not notify buyer about accept: {e_notify}")
+
+
+@router.callback_query(F.data.startswith("cancel_accept:"))
+async def handle_cancel_accept_callback(callback: CallbackQuery, bot: Bot):
+    deal_id = int(callback.data.split(":")[1])
+    deal = await db.get_deal(deal_id)
+
+    if not deal:
+        await safe_answer(callback, "Оффер не найден!", show_alert=True)
+        return
+
+    if deal["status"] not in ("PENDING", "CONFIRMING"):
+        await safe_answer(callback, "Оффер уже неактивен!", show_alert=True)
+        return
+
+    # Возвращаем статус в PENDING
+    await db.set_deal_status(deal_id, "PENDING")
+
+    deal_lang = deal.get("lang", "RU")
+    formatted_number = format_number(deal["nft_number"])
+    currency_symbol = "GRAM" if deal.get("currency") == "GRAM" else "⭐️"
+    stars_txt = f"{deal['stars_amount']} {currency_symbol}"
+    timer_str = format_offer_timer(deal.get("expires_at"), lang=deal_lang)
+    config.DEAL_LAST_TIMERS[deal_id] = timer_str
+
+    if deal_lang == "ENG":
+        revert_text = (
+            f"A user offers you <b>{stars_txt}</b> for gift <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>.\n\n"
+            f"Expires in {timer_str}."
+        )
+    else:
+        revert_text = (
+            f"Пользователь предлагает Вам <b>{stars_txt}</b> за подарок <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>.\n\n"
+            f"Истекает через {timer_str}."
+        )
+
+    revert_kb = get_screen1_keyboard(deal_id, lang=deal_lang)
+    link_opts = LinkPreviewOptions(
+        url=deal["nft_url"],
+        prefer_large_media=True,
+        show_above_text=True
+    )
+
+    await safe_edit_deal_message(
+        bot=bot,
+        deal=deal,
+        text=revert_text,
+        reply_markup=revert_kb,
+        link_opts=link_opts,
+        inline_message_id=callback.inline_message_id,
+        callback_message=callback.message,
+        callback_from_user_id=callback.from_user.id
+    )
+    await safe_answer(callback, "Передача подарка отменена.")
+
+
+@router.callback_query(F.data.startswith("confirm_accept:"))
+async def handle_confirm_accept_callback(callback: CallbackQuery, bot: Bot):
+    await handle_accept_callback(callback, bot)
+
+
+@router.callback_query(F.data.startswith("decline:"))
+async def handle_decline_callback(callback: CallbackQuery, bot: Bot):
+    deal_id = int(callback.data.split(":")[1])
+    deal = await db.get_deal(deal_id)
+
+    if not deal:
+        await safe_answer(callback, "Оффер не найден!", show_alert=True)
+        return
+
+    if deal["status"] not in ("PENDING", "CONFIRMING"):
+        await safe_answer(callback, "Этот оффер уже неактивен!", show_alert=True)
+        return
+
+    user = callback.from_user
+    if deal["seller_id"] and user.id not in (deal["buyer_id"], deal["seller_id"]):
+        await safe_answer(callback, "Вы не являетесь участником этой сделки!", show_alert=True)
+        return
+
+    await db.set_deal_status(deal_id, "DECLINED")
+    config.DEAL_LAST_TIMERS.pop(deal_id, None)
+
+    deal_lang = deal.get("lang", "RU")
+    curr_symbol = "GRAM" if deal.get("currency") == "GRAM" else "⭐️"
+    stars_txt = f"{deal['stars_amount']} {curr_symbol}"
+
+    if deal_lang == "ENG":
+        declined_text = (
+            f"<b>OFFER DECLINED</b>\n\n"
+            f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{format_number(deal['nft_number'])}</b></a>\n"
+            f"<b>Amount:</b> <b>{stars_txt}</b>"
+        )
+    else:
+        declined_text = (
+            f"<b>ОФФЕР ОТКЛОНЁН</b>\n\n"
+            f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{format_number(deal['nft_number'])}</b></a>\n"
+            f"<b>Сумма:</b> <b>{stars_txt}</b>"
+        )
+
+    link_opts = LinkPreviewOptions(
+        url=deal["nft_url"],
+        prefer_large_media=True,
+        show_above_text=True
+    )
+
+    await safe_edit_deal_message(
+        bot=bot,
+        deal=deal,
+        text=declined_text,
+        reply_markup=None,
+        link_opts=link_opts,
+        inline_message_id=callback.inline_message_id,
+        callback_message=callback.message,
+        callback_from_user_id=callback.from_user.id
+    )
+    await safe_answer(callback, "Оффер отклонён.")
+
+    # Уведомление покупателю
+    try:
+        await bot.send_message(
+            chat_id=deal["buyer_id"],
+            text=(
+                f"❌ <b>Оффер отклонён продавцом</b>\n\n"
+                f"🎁 <b>Подарок:</b> <b>{deal['nft_name']} #{format_number(deal['nft_number'])}</b>\n"
+                f"⭐ <b>Сумма:</b> <b>{stars_txt}</b>"
+            ),
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+
+async def verify_deal_gift_received(deal: dict, bot: Bot) -> tuple[bool, Optional[str]]:
+    """
+    Проверяет в Telegram API, действительно ли NFT-подарок поступил получателю (гаранту или покупателю).
+    Возвращает: (успех, название_подарка_или_ошибка)
+    """
+    buyer_display, target_url, is_premium = await get_deal_buyer_info(deal)
+    target_recipients = [config.GIFT_RECIPIENT_ID]
+    if is_premium and deal.get("buyer_id") and deal["buyer_id"] not in target_recipients:
+        target_recipients.insert(0, deal["buyer_id"])
+
+    expected_number = re.sub(r'\D', '', str(deal.get("nft_number", "")))
+    expected_name_clean = re.sub(r'[\s\-_]', '', str(deal.get("nft_name", "")).lower())
+
+    deal_created_ts = 0
+    try:
+        deal_created_dt = datetime.strptime(deal["created_at"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        deal_created_ts = int(deal_created_dt.timestamp()) - 900
+    except Exception:
+        pass
+
+    for r_id in target_recipients:
+        gifts_list = []
+        try:
+            ugifts = await bot.get_user_gifts(user_id=r_id)
+            if ugifts and ugifts.gifts:
+                gifts_list.extend(ugifts.gifts)
+        except Exception as e:
+            logger.debug(f"get_user_gifts({r_id}) error: {e}")
+
+        try:
+            conn = await db.get_business_connection_by_user(r_id)
+            if conn and conn.get("connection_id"):
+                bgifts = await bot.get_business_account_gifts(business_connection_id=conn["connection_id"])
+                if bgifts and bgifts.gifts:
+                    gifts_list.extend(bgifts.gifts)
+        except Exception as e:
+            logger.debug(f"get_business_account_gifts({r_id}) error: {e}")
+
+        for g in gifts_list:
+            if getattr(g, "type", None) != "unique":
+                continue
+
+            inner = getattr(g, "gift", None)
+            if not inner:
+                continue
+
+            gift_number = re.sub(r'\D', '', str(getattr(inner, "number", "")))
+            gift_name = str(getattr(inner, "name", ""))
+            gift_base = str(getattr(inner, "base_name", ""))
+
+            gift_name_clean = re.sub(r'[\s\-_]', '', gift_name.lower())
+            gift_base_clean = re.sub(r'[\s\-_]', '', gift_base.lower())
+
+            if expected_number and gift_number != expected_number:
+                continue
+
+            if expected_name_clean:
+                name_match = (
+                    expected_name_clean in gift_name_clean
+                    or expected_name_clean in gift_base_clean
+                    or gift_base_clean in expected_name_clean
+                )
+                if not name_match:
+                    continue
+
+            send_date = getattr(g, "send_date", 0)
+            if send_date and deal_created_ts and send_date < deal_created_ts:
+                continue
+
+            return True, f"{gift_name} #{gift_number}"
+
+    return False, None
+
+
+_SENT_DEBOUNCE: dict[int, float] = {}
+
+@router.callback_query(F.data.startswith("sent:"))
+async def handle_sent_callback(callback: CallbackQuery, bot: Bot):
+    await safe_answer(callback, "Вы ещё не передали подарок!", show_alert=True)
+
+
+async def complete_deal_with_guarantor(
+    bot: Bot,
+    deal: dict,
+    callback_message=None,
+    inline_message_id=None
+):
+    deal_id = deal["deal_id"]
+    await db.set_deal_status(deal_id, "COMPLETED")
+
+    buyer_display, _, is_premium = await get_deal_buyer_info(deal)
+    formatted_number = format_number(deal["nft_number"])
+    currency_name = "GRAM" if deal.get("currency") == "GRAM" else "Stars"
+    deal_lang = deal.get("lang", "RU")
+
+    # Экран успешно завершенной сделки
+    if deal_lang == "ENG":
+        screen_done_text = (
+            f"✅ <b>DEAL COMPLETED SUCCESSFULLY</b>\n\n"
+            f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
+            f"<b>Deal amount:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
+            f"<b>Guarantor:</b> {buyer_display}\n"
+            f"<b>Status:</b> ✅ <b>Gift received by guarantor.</b>\n\n"
+            f"<b>{deal['stars_amount']} {currency_name} credited to your balance.</b>"
+        )
+    else:
+        screen_done_text = (
+            f"✅ <b>СДЕЛКА УСПЕШНО ЗАВЕРШЕНА</b>\n\n"
+            f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
+            f"<b>Сумма сделки:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
+            f"<b>Гарант:</b> {buyer_display}\n"
+            f"<b>Статус:</b> ✅ <b>Подарок успешно получен гарантом.</b>\n\n"
+            f"<b>{deal['stars_amount']} {currency_name} зачислены на ваш баланс.</b>"
+        )
+
+    link_opts = LinkPreviewOptions(
+        url=deal["nft_url"],
+        prefer_large_media=True,
+        show_above_text=True
+    )
+
+    await safe_edit_deal_message(
+        bot=bot,
+        deal=deal,
+        text=screen_done_text,
+        reply_markup=None,
+        link_opts=link_opts,
+        inline_message_id=inline_message_id or deal.get("inline_message_id"),
+        callback_message=callback_message
+    )
+
+    # Уведомление покупателю
+    try:
+        await bot.send_message(
+            chat_id=deal["buyer_id"],
+            text=(
+                f"🎉 <b>NFT-подарок успешно получен гарантом!</b>\n\n"
+                f"• Подарок: <b>{deal['nft_name']} #{formatted_number}</b>\n"
+                f"• Сумма: <b>{deal['stars_amount']} {currency_name}</b>\n"
+                f"• Продавец: @{deal.get('seller_username') or deal.get('seller_id')}\n"
+                f"• Статус: ✅ <b>Подарок в безопасности у гаранта {buyer_display}</b>"
+            ),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.debug(f"Could not notify buyer about completed deal: {e}")
+
+
+@router.callback_query(F.data.startswith("confirm:"))
+async def handle_confirm_callback(callback: CallbackQuery, bot: Bot):
+    deal_id = int(callback.data.split(":")[1])
+    deal = await db.get_deal(deal_id)
+
+    if not deal:
+        await safe_answer(callback, "Оффер не найден!", show_alert=True)
+        return
+
+    if deal["status"] != "SENT":
+        await safe_answer(callback, "Сделка уже завершена или ещё не отправлена!", show_alert=True)
+        return
+
+    user = callback.from_user
+    if user.id != deal["buyer_id"] and user.id not in config.ADMIN_IDS:
+        await safe_answer(callback, "Только покупатель или администратор может подтвердить получение!", show_alert=True)
+        return
+
+    # Проверяем, действительно ли NFT-подарок поступил получателю
+    is_received, gift_title = await verify_deal_gift_received(deal, bot)
+    if not is_received and user.id not in config.ADMIN_IDS:
+        formatted_num = format_number(deal["nft_number"])
+        await safe_answer(
+            callback,
+            f"❌ Невозможно завершить сделку!\n\n"
+            f"NFT-подарок «{deal['nft_name']} #{formatted_num}» не обнаружен в профиле получателя.",
+            show_alert=True
+        )
+        return
+
+    # Mark as COMPLETED! Now this deal will strictly appear in the successful deals list
+    await db.set_deal_status(deal_id, "COMPLETED")
+
+    buyer_display = "Гарант-сервис"
+    formatted_number = format_number(deal["nft_number"])
+
+    currency_name = "GRAM" if deal.get("currency") == "GRAM" else "Stars"
+    curr_symbol = "💎" if deal.get("currency") == "GRAM" else "⭐️"
+    deal_lang = deal.get("lang", "RU")
+
+    if deal_lang == "ENG":
+        completed_text = (
+            f"<b>DEAL COMPLETED SUCCESSFULLY</b>\n\n"
+            f"<b>Gift {deal['nft_name']} #{formatted_number} successfully received and verified.</b>\n"
+            f"<b>Payout amount:</b> <b>{deal['stars_amount']} {currency_name}</b>.\n\n"
+            f"<b>{currency_name} will be credited to balance within 24 hours.</b>"
+        )
+        payout_note = f"{curr_symbol} <b>Expect {currency_name} within 24 hours.</b>"
+    else:
+        completed_text = (
+            f"<b>СДЕЛКА УСПЕШНО ЗАВЕРШЕНА</b>\n\n"
+            f"<b>Подарок {deal['nft_name']} #{formatted_number} успешно получен и подтверждён.</b>\n"
+            f"<b>Сумма к выплате:</b> <b>{deal['stars_amount']} {currency_name}</b>.\n\n"
+            f"<b>{currency_name} зачисляются на баланс в течение 24 часов.</b>"
+        )
+        payout_note = f"{curr_symbol} <b>Ожидайте {currency_name} в течение 24 часов.</b>"
+
+    try:
+        if callback.inline_message_id:
+            try:
+                await bot.edit_message_text(inline_message_id=callback.inline_message_id, text=completed_text, reply_markup=None, parse_mode="HTML")
+            except Exception:
+                await bot.edit_message_caption(inline_message_id=callback.inline_message_id, caption=completed_text, reply_markup=None, parse_mode="HTML")
+        else:
+            await callback.message.edit_text(text=completed_text, reply_markup=None, parse_mode="HTML")
+        await safe_answer(callback, "Получение подтверждено! Сделка завершена.")
+    except Exception as e:
+        logger.error(f"Error in confirm handler: {e}")
+        await safe_answer(callback)
+
+    # Message in Business chat
+    if deal.get("business_connection_id"):
+        try:
+            await bot.send_message(
+                business_connection_id=deal["business_connection_id"],
+                chat_id=deal["chat_id"],
+                text=payout_note,
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+    # Direct notification to seller
+    if deal.get("seller_id"):
+        try:
+            seller_notify_text = (
+                f"🎉 <b>Сделка завершена!</b>\n\n"
+                f"Подарок <b>{deal['nft_name']} #{formatted_number}</b> подтверждён.\n"
+                f"Сумма к выплате: <b>{deal['stars_amount']} {currency_name}</b>.\n\n"
+                f"{payout_note}"
+            )
+            await bot.send_message(
+                chat_id=deal["seller_id"],
+                text=seller_notify_text,
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
 async def verify_deal_gift_received(deal: dict, bot: Bot) -> tuple[bool, Optional[str]]:
     """
     Проверяет в Telegram API, действительно ли NFT-подарок поступил получателю (гаранту или покупателю).

@@ -13,6 +13,7 @@ from handlers import (
     safe_edit_deal_message, get_deal_buyer_info, star_gifts_background_checker
 )
 from admin_handlers import admin_router
+from deal_bot_handlers import deal_router
 from middlewares import ThrottlingMiddleware
 from worker_manager import worker_manager
 
@@ -202,23 +203,16 @@ async def main():
         await asyncio.sleep(30)
         sys.exit(1)
 
-    deal_bot = None
     if getattr(config, "DEAL_BOT_TOKEN", None) and config.DEAL_BOT_TOKEN != config.BOT_TOKEN:
-        try:
-            temp_deal_bot = Bot(
-                token=config.DEAL_BOT_TOKEN,
-                default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-            )
-            deal_info = await temp_deal_bot.get_me()
-            deal_bot = temp_deal_bot
-            config.DEAL_BOT_ID = deal_info.id
-            config.DEAL_BOT_USERNAME = deal_info.username or ""
-            logger.info(f"Deal bot connected: @{config.DEAL_BOT_USERNAME} (ID: {deal_info.id})")
-        except Exception as e_deal:
-            logger.warning(f"DEAL_BOT_TOKEN недействителен ({e_deal}). Переключаюсь в Single-Bot режим (один бот).")
-            deal_bot = None
-
-    if not deal_bot:
+        logger.info("Initializing dedicated deal bot from config...")
+        ok, res = await worker_manager.start_deal_bot(config.DEAL_BOT_TOKEN)
+        if ok:
+            logger.info(f"Dedicated deal bot connected: @{res}")
+        else:
+            logger.warning(f"Could not connect dedicated deal bot ({res}). Falling back to main bot @{config.MAIN_BOT_USERNAME}.")
+            config.DEAL_BOT_ID = bot_info.id
+            config.DEAL_BOT_USERNAME = config.MAIN_BOT_USERNAME
+    else:
         config.DEAL_BOT_ID = bot_info.id
         config.DEAL_BOT_USERNAME = config.MAIN_BOT_USERNAME
         logger.info(f"Режим работы: Single-Bot (все функции и сделки ведёт @{config.MAIN_BOT_USERNAME}).")
@@ -250,22 +244,8 @@ async def main():
                 asyncio.create_task(db.register_user(bm.chat.id, uname, fname))
         return await handler(event, data)
 
-    legacy_deal_task = None
-    if deal_bot and deal_bot.token != bot.token:
-        try:
-            await deal_bot.delete_my_commands()
-        except Exception:
-            pass
-        from worker_manager import worker_dp
-        legacy_deal_task = asyncio.create_task(
-            worker_dp.start_polling(
-                deal_bot,
-                handle_signals=False,
-                allowed_updates=["message", "callback_query"]
-            )
-        )
-
     dp.include_router(admin_router)
+    dp.include_router(deal_router)
     dp.include_router(router)
 
     # Start all subscriber worker bots restored from database

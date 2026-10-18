@@ -896,18 +896,25 @@ async def cmd_set_deal_token(message: Message):
         await message.answer("Использование: <code>/set_deal_token 123456789:ABCdef...</code>", parse_mode="HTML")
         return
     token = args[1].strip()
-    if not re.match(r"^\d{8,12}:[A-Za-z0-9_-]{30,}$", token):
-        await message.answer("❌ Неверный формат токена!", parse_mode="HTML")
-        return
-    if update_env_file("DEAL_BOT_TOKEN", token):
-        config.DEAL_BOT_TOKEN = token
+    wait_msg = await message.answer("⏳ <i>Подключаю и запускаю нового бота сделок в Telegram...</i>", parse_mode="HTML")
+    from worker_manager import worker_manager
+    ok, res = await worker_manager.start_deal_bot(token)
+    try:
+        await wait_msg.delete()
+    except Exception:
+        pass
+
+    if ok:
         await message.answer(
-            "✅ <b>Новый DEAL_BOT_TOKEN успешно сохранён в .env!</b>\n"
-            "Перезапустите бота в панели хостинга для применения.",
+            f"✅ <b>Бот сделок @{res} успешно подключён и запущен!</b>\n\n"
+            f"🎯 <b>Что изменилось:</b>\n"
+            f"• Теперь при нажатии кнопки «Принять» во всех офферах покупатели/продавцы будут перенаправляться в <b>@{res}</b>.\n"
+            f"• Основной бот защищён от банов и репортов со сделок.\n"
+            f"• В случае блокировки бота сделок просто отправьте <code>/set_deal_token новый_токен</code>.",
             parse_mode="HTML"
         )
     else:
-        await message.answer("❌ Ошибка при сохранении токена.", parse_mode="HTML")
+        await message.answer(f"❌ <b>Ошибка при запуске бота сделок:</b>\n{res}", parse_mode="HTML")
 
 
 

@@ -391,8 +391,8 @@ async def handle_create_send(callback: CallbackQuery, state: FSMContext, bot: Bo
             lang=lang
         )
 
-        business_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, bot_username=bot_username, is_business=True)
-        pm_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, bot_username=bot_username, is_business=False)
+        business_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, is_business=True)
+        pm_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, is_business=False)
 
         link_opts = LinkPreviewOptions(
             is_disabled=False,
@@ -598,7 +598,7 @@ async def handle_inline_query(inline_query: InlineQuery, bot: Bot):
                         parse_mode="HTML",
                         link_preview_options=link_opts
                     ),
-                    reply_markup=get_screen1_keyboard(deal_id=deal_id, lang=deal_lang, bot_username=bot_uname)
+                    reply_markup=get_screen1_keyboard(deal_id=deal_id, lang=deal_lang)
                 )
                 await inline_query.answer([article], cache_time=1, is_personal=True)
                 return

@@ -6,18 +6,22 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 import database as db
+import config
 
 logger = logging.getLogger("nft_bot.worker_manager")
 
 class WorkerBotManager:
     """
-    Менеджер рабочих ботов-воркеров.
-    Позволяет подписчикам подключать личных ботов на лету без перезагрузки сервера.
+    Менеджер рабочих ботов-воркеров и центрального бота сделок.
+    Позволяет подписчикам подключать личных ботов на лету без перезагрузки сервера,
+    а администратору — мгновенно менять бота сделок.
     """
     def __init__(self, worker_dp: Dispatcher):
         self.worker_dp = worker_dp
         self.active_tasks: Dict[int, asyncio.Task] = {}
         self.active_bots: Dict[int, Bot] = {}
+        self.deal_bot_task: Optional[asyncio.Task] = None
+        self.deal_bot_instance: Optional[Bot] = None
 
     def is_valid_token(self, token: str) -> bool:
         return bool(re.match(r"^\d{8,12}:[A-Za-z0-9_-]{30,}$", token.strip()))
@@ -110,9 +114,84 @@ class WorkerBotManager:
         logger.info(f"Stopped worker for user {user_id}")
 
     async def stop_all(self):
+        await self.stop_deal_bot()
         user_ids = list(self.active_tasks.keys())
         for uid in user_ids:
             await self.stop_worker(uid, remove_from_db=False)
+
+    async def start_deal_bot(self, token: str) -> Tuple[bool, str]:
+        token = (token or "").strip()
+        if not self.is_valid_token(token):
+            return False, "Неверный формат токена Telegram! Пример: <code>123456789:ABCdefGHIjklMNOpqrSTUvwxYZ</code>"
+
+        await self.stop_deal_bot()
+
+        bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        try:
+            bot_info = await bot.get_me()
+        except Exception as e:
+            await bot.session.close()
+            logger.warning(f"Failed to verify DEAL_BOT token: {e}")
+            return False, f"Telegram отклонил токен бота ({e}). Проверьте токен в @BotFather."
+
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+            await bot.delete_my_commands()
+        except Exception:
+            pass
+
+        config.DEAL_BOT_TOKEN = token
+        config.DEAL_BOT_USERNAME = bot_info.username or ""
+        config.DEAL_BOT_ID = bot_info.id
+
+        from admin_handlers import update_env_file
+        update_env_file("DEAL_BOT_TOKEN", token)
+        update_env_file("DEAL_BOT_USERNAME", config.DEAL_BOT_USERNAME)
+
+        self.deal_bot_instance = bot
+        self.deal_bot_task = asyncio.create_task(self._poll_deal_bot(bot, config.DEAL_BOT_USERNAME))
+        logger.info(f"Dedicated deal bot @{config.DEAL_BOT_USERNAME} started and polling.")
+        return True, config.DEAL_BOT_USERNAME
+
+    async def _poll_deal_bot(self, bot: Bot, username: str):
+        try:
+            logger.info(f"Starting polling for deal bot @{username}...")
+            await self.worker_dp.start_polling(
+                bot,
+                handle_signals=False,
+                allowed_updates=["message", "callback_query"]
+            )
+        except asyncio.CancelledError:
+            logger.info(f"Deal bot polling cancelled (@{username})")
+        except Exception as e:
+            logger.error(f"Error in deal bot polling (@{username}): {e}")
+        finally:
+            try:
+                await bot.session.close()
+            except Exception:
+                pass
+            self.deal_bot_task = None
+            self.deal_bot_instance = None
+
+    async def stop_deal_bot(self):
+        task = self.deal_bot_task
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+        bot = self.deal_bot_instance
+        if bot:
+            try:
+                await bot.session.close()
+            except Exception:
+                pass
+        self.deal_bot_task = None
+        self.deal_bot_instance = None
+        logger.info("Deal bot stopped.")
 
     async def start_all_from_db(self):
         records = await db.get_all_active_worker_bots()

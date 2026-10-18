@@ -9,12 +9,16 @@ def get_screen1_keyboard(deal_id: int, lang: str = "RU", bot_username: str | Non
     """
     Клавиатура Экрана 1:
     [ ❌ Отклонить ]  [ ✅ Принять ]
-    Принять перенаправляет в бота сделки
+    Принять перенаправляет в бота сделок (бота владельца сервиса)
     """
     is_eng = (lang == "ENG")
     decline_text = "❌ Decline" if is_eng else "❌ Отклонить"
     accept_text = "✅ Accept" if is_eng else "✅ Принять"
-    deal_bot = bot_username or getattr(config, "DEAL_BOT_USERNAME", None) or getattr(config, "MAIN_BOT_USERNAME", "bot")
+    deal_bot = (
+        getattr(config, "DEAL_BOT_USERNAME", None)
+        or getattr(config, "MAIN_BOT_USERNAME", None)
+        or "TRADE_Market_Space_bot"
+    )
 
     return InlineKeyboardMarkup(inline_keyboard=[
         [

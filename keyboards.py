@@ -153,22 +153,59 @@ def get_screen3_buyer_keyboard(deal_id: int) -> InlineKeyboardMarkup:
 
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     """
-    Главное меню бота
+    Главное меню Master-бота (Кабинет)
+    """
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🤖 Мой рабочий бот", callback_data="menu_worker_bot")
+        ],
+        [
+            InlineKeyboardButton(text="⭐️ Тарифы и подписка", callback_data="menu_sub"),
+            InlineKeyboardButton(text="👤 Профиль", callback_data="menu_profile")
+        ],
+        [
+            InlineKeyboardButton(text="📖 Инструкция", callback_data="menu_guide"),
+            InlineKeyboardButton(text="❓ Частые вопросы", callback_data="menu_faq")
+        ]
+    ])
+
+def get_worker_menu_keyboard(worker_bot_username: str | None = None) -> InlineKeyboardMarkup:
+    """
+    Клавиатура управления личным рабочим ботом
+    """
+    if worker_bot_username:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="👉 Открыть рабочего бота", url=f"https://t.me/{worker_bot_username}")
+            ],
+            [
+                InlineKeyboardButton(text="🔄 Сменить токен бота", callback_data="worker_input_token"),
+                InlineKeyboardButton(text="❌ Отключить", callback_data="worker_disconnect")
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
+            ]
+        ])
+    else:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="➕ Подключить токен бота", callback_data="worker_input_token")
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
+            ]
+        ])
+
+def get_worker_bot_main_keyboard() -> InlineKeyboardMarkup:
+    """
+    Главное меню внутри Рабочего бота (Worker Bot)
     """
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="✨ Создать оффер (/create)", callback_data="menu_create")
         ],
         [
-            InlineKeyboardButton(text="👤 Профиль", callback_data="menu_profile"),
-            InlineKeyboardButton(text="⭐️ Тарифы и подписка", callback_data="menu_sub")
-        ],
-        [
             InlineKeyboardButton(text="💼 Telegram Business", callback_data="menu_business")
-        ],
-        [
-            InlineKeyboardButton(text="📖 Как пользоваться", callback_data="menu_guide"),
-            InlineKeyboardButton(text="❓ Частые вопросы", callback_data="menu_faq")
         ]
     ])
 

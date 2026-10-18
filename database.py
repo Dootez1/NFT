@@ -103,7 +103,18 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
-        
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS worker_bots (
+                user_id INTEGER PRIMARY KEY,
+                bot_token TEXT NOT NULL,
+                bot_id INTEGER NOT NULL,
+                bot_username TEXT NOT NULL,
+                is_active BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
         # Migrations for existing tables
         try:
             await db.execute("ALTER TABLE subscriptions ADD COLUMN plan TEXT DEFAULT 'standard';")
@@ -608,5 +619,39 @@ async def get_accepted_deals() -> list:
         """) as cursor:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
+
+async def save_worker_bot(user_id: int, bot_token: str, bot_id: int, bot_username: str):
+    async with get_write_db() as db:
+        await db.execute("""
+            INSERT INTO worker_bots (user_id, bot_token, bot_id, bot_username, is_active, updated_at)
+            VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET
+                bot_token = excluded.bot_token,
+                bot_id = excluded.bot_id,
+                bot_username = excluded.bot_username,
+                is_active = 1,
+                updated_at = CURRENT_TIMESTAMP
+        """, (user_id, bot_token, bot_id, bot_username))
+        await db.commit()
+
+async def get_worker_bot(user_id: int) -> Optional[Dict[str, Any]]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM worker_bots WHERE user_id = ?", (user_id,)) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+async def delete_worker_bot(user_id: int):
+    async with get_write_db() as db:
+        await db.execute("DELETE FROM worker_bots WHERE user_id = ?", (user_id,))
+        await db.commit()
+
+async def get_all_active_worker_bots() -> List[Dict[str, Any]]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM worker_bots WHERE is_active = 1") as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
 
 

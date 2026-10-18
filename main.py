@@ -14,6 +14,8 @@ from handlers import (
 )
 from admin_handlers import admin_router
 from deal_bot_handlers import deal_router
+from middlewares import ThrottlingMiddleware
+from worker_manager import worker_manager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -224,6 +226,10 @@ async def main():
 
     dp = Dispatcher()
 
+    # Anti-Flood & Anti-DDoS Throttling Protection
+    dp.message.outer_middleware(ThrottlingMiddleware(limit=0.5))
+    dp.callback_query.outer_middleware(ThrottlingMiddleware(limit=0.5))
+
     _SEEN_USERS = set()
 
     @dp.update.outer_middleware()
@@ -261,6 +267,10 @@ async def main():
     dp.include_router(admin_router)
     dp.include_router(router)
 
+    # Start all subscriber worker bots restored from database
+    logger.info("Initializing subscriber worker bots...")
+    asyncio.create_task(worker_manager.start_all_from_db())
+
     # Run background workers
     timer_task = asyncio.create_task(countdown_timer_worker(bot))
     checker_task = asyncio.create_task(expiration_checker(bot))
@@ -271,7 +281,7 @@ async def main():
     if deal_bot and deal_bot.token != bot.token:
         polling_bots.append(deal_bot)
 
-    logger.info(f"Starting bot polling ({len(polling_bots)} bot(s)) with Telegram Business & Stars Payments...")
+    logger.info(f"Starting Master bot polling ({len(polling_bots)} bot(s)) with Anti-DDoS & Worker Manager...")
     try:
         await dp.start_polling(
             *polling_bots,
@@ -294,6 +304,7 @@ async def main():
         checker_task.cancel()
         ton_task.cancel()
         star_gifts_task.cancel()
+        await worker_manager.stop_all()
         await bot.session.close()
         if deal_bot:
             await deal_bot.session.close()

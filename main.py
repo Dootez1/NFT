@@ -13,7 +13,6 @@ from handlers import (
     safe_edit_deal_message, get_deal_buyer_info, star_gifts_background_checker
 )
 from admin_handlers import admin_router
-from deal_bot_handlers import deal_router
 from middlewares import ThrottlingMiddleware
 from worker_manager import worker_manager
 
@@ -245,7 +244,6 @@ async def main():
         return await handler(event, data)
 
     dp.include_router(admin_router)
-    dp.include_router(deal_router)
     dp.include_router(router)
 
     # Start all subscriber worker bots restored from database

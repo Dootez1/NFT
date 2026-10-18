@@ -275,16 +275,12 @@ async def main():
             ]
         )
     finally:
-        if legacy_deal_task:
-            legacy_deal_task.cancel()
         timer_task.cancel()
         checker_task.cancel()
         ton_task.cancel()
         star_gifts_task.cancel()
         await worker_manager.stop_all()
         await bot.session.close()
-        if deal_bot:
-            await deal_bot.session.close()
         await close_http_session()
 
 if __name__ == "__main__":

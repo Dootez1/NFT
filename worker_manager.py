@@ -161,7 +161,7 @@ class WorkerBotManager:
             await dp_to_use.start_polling(
                 bot,
                 handle_signals=False,
-                allowed_updates=["message", "callback_query"]
+                allowed_updates=["message", "callback_query", "business_connection"]
             )
         except asyncio.CancelledError:
             logger.info(f"Deal bot polling cancelled (@{username})")

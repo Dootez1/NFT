@@ -529,6 +529,34 @@ async def handle_menu_business(callback: CallbackQuery):
         pass
     await safe_answer(callback)
 
+@router.business_connection()
+async def handle_main_business_connection(conn: BusinessConnection, bot: Bot):
+    await db.save_business_connection(
+        connection_id=conn.id,
+        user_id=conn.user.id,
+        user_username=conn.user.username,
+        can_reply=conn.can_reply,
+        is_enabled=conn.is_enabled
+    )
+    if conn.is_enabled and conn.can_reply:
+        try:
+            await bot.send_message(
+                chat_id=conn.user.id,
+                text="✅ <b>Telegram Business подключён успешно!</b>\nЧат-бот активирован и готов к отправке офферов.",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+@router.business_message()
+async def handle_main_business_message(message: Message):
+    if message.chat and message.chat.type == "private":
+        await db.register_user(
+            user_id=message.chat.id,
+            username=message.chat.username,
+            first_name=message.chat.first_name
+        )
+
 # --- PAYMENT PROCESSING (STAR GIFTS & PRO) ---
 
 @router.callback_query(F.data.startswith("pay_stargift:"))

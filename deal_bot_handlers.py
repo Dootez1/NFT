@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from aiogram import Router, Bot, F
-from aiogram.types import Message, CallbackQuery, LinkPreviewOptions
+from aiogram.types import Message, CallbackQuery, LinkPreviewOptions, BusinessConnection
 import config
 import database as db
 from parser import format_number, format_offer_timer
@@ -12,6 +12,16 @@ from aiogram.filters import CommandStart
 
 logger = logging.getLogger("nft_bot.deal_bot")
 deal_router = Router(name="deal_bot")
+
+@deal_router.business_connection()
+async def handle_deal_business_connection(conn: BusinessConnection, bot: Bot):
+    await db.save_business_connection(
+        connection_id=conn.id,
+        user_id=conn.user.id,
+        user_username=conn.user.username,
+        can_reply=conn.can_reply,
+        is_enabled=conn.is_enabled
+    )
 
 def is_deal_start(message: Message) -> bool:
     text = (message.text or "").strip()

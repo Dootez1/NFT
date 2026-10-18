@@ -166,10 +166,6 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="⭐️ Тарифы и подписка", callback_data="menu_sub"),
             InlineKeyboardButton(text="👤 Профиль", callback_data="menu_profile")
-        ],
-        [
-            InlineKeyboardButton(text="📖 Инструкция", callback_data="menu_guide"),
-            InlineKeyboardButton(text="❓ Частые вопросы", callback_data="menu_faq")
         ]
     ])
 

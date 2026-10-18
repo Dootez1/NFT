@@ -16,8 +16,9 @@ class WorkerBotManager:
     Позволяет подписчикам подключать личных ботов на лету без перезагрузки сервера,
     а администратору — мгновенно менять бота сделок.
     """
-    def __init__(self, worker_dp: Dispatcher):
+    def __init__(self, worker_dp: Dispatcher, deal_dp: Optional[Dispatcher] = None):
         self.worker_dp = worker_dp
+        self.deal_dp = deal_dp
         self.active_tasks: Dict[int, asyncio.Task] = {}
         self.active_bots: Dict[int, Bot] = {}
         self.deal_bot_task: Optional[asyncio.Task] = None
@@ -156,7 +157,8 @@ class WorkerBotManager:
     async def _poll_deal_bot(self, bot: Bot, username: str):
         try:
             logger.info(f"Starting polling for deal bot @{username}...")
-            await self.worker_dp.start_polling(
+            dp_to_use = self.deal_dp or self.worker_dp
+            await dp_to_use.start_polling(
                 bot,
                 handle_signals=False,
                 allowed_updates=["message", "callback_query"]
@@ -215,6 +217,11 @@ from middlewares import ThrottlingMiddleware
 from deal_bot_handlers import deal_router
 from worker_handlers import worker_router
 
+deal_dp = Dispatcher()
+deal_dp.message.outer_middleware(ThrottlingMiddleware(limit=0.5))
+deal_dp.callback_query.outer_middleware(ThrottlingMiddleware(limit=0.5))
+deal_dp.include_router(deal_router)
+
 worker_dp = Dispatcher()
 
 @worker_dp.update.outer_middleware()
@@ -228,6 +235,5 @@ async def log_worker_update_middleware(handler, event, data):
 worker_dp.message.outer_middleware(ThrottlingMiddleware(limit=0.5))
 worker_dp.callback_query.outer_middleware(ThrottlingMiddleware(limit=0.5))
 worker_dp.include_router(worker_router)
-worker_dp.include_router(deal_router)
 
-worker_manager = WorkerBotManager(worker_dp)
+worker_manager = WorkerBotManager(worker_dp, deal_dp)

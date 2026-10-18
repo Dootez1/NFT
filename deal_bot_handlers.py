@@ -449,3 +449,15 @@ async def handle_deal_confirm(callback: CallbackQuery, bot: Bot):
 @deal_router.callback_query(F.data.startswith("sent:"))
 async def handle_deal_bot_sent(callback: CallbackQuery, bot: Bot):
     await safe_answer(callback, "Вы ещё не передали подарок!", show_alert=True)
+
+@deal_router.message()
+async def handle_deal_bot_any_message(message: Message):
+    """
+    В боте сделок удаляются абсолютно все лишние сообщения от пользователей
+    (любой текст, команды, стикеры, флуд), чтобы в чате оставалась только официальная карточка сделки.
+    """
+    try:
+        await message.delete()
+    except Exception:
+        pass
+

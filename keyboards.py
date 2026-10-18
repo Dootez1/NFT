@@ -8,35 +8,35 @@ from config import (
 def get_screen1_keyboard(deal_id: int, lang: str = "RU", bot_username: str | None = None, is_business: bool = False) -> InlineKeyboardMarkup:
     """
     Клавиатура Экрана 1:
-    [ ⓧ Отклонить ]  [ ⓥ Принять ] из пака tgiosicons
-    Принять перенаправляет в бота сделки @TeIlegram0fferBot
+    [ ❌ Отклонить ]  [ ✅ Принять ]
+    Принять перенаправляет в бота сделки
     """
     is_eng = (lang == "ENG")
-    decline_text = "Decline" if is_eng else "Отклонить"
-    accept_text = "Accept" if is_eng else "Принять"
-    deal_bot = getattr(config, "DEAL_BOT_USERNAME", "TeIlegram0fferBot")
+    decline_text = "❌ Decline" if is_eng else "❌ Отклонить"
+    accept_text = "✅ Accept" if is_eng else "✅ Принять"
+    deal_bot = bot_username or getattr(config, "DEAL_BOT_USERNAME", None) or getattr(config, "MAIN_BOT_USERNAME", "bot")
 
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
                 text=decline_text,
-                callback_data=f"decline:{deal_id}",
-                icon_custom_emoji_id="5774077015388852135"
+                callback_data=f"decline:{deal_id}"
             ),
             InlineKeyboardButton(
                 text=accept_text,
-                url=f"https://t.me/{deal_bot}?start=deal_{deal_id}",
-                icon_custom_emoji_id="5774022692642492953"
+                url=f"https://t.me/{deal_bot}?start=deal_{deal_id}"
             )
         ]
     ])
 
-def get_confirm_accept_keyboard(deal_id: int, target_url: str = "https://t.me/DealNftOffer") -> InlineKeyboardMarkup:
+def get_confirm_accept_keyboard(deal_id: int, target_url: str | None = None) -> InlineKeyboardMarkup:
     """
     Клавиатура подтверждения передачи подарка:
     [ ❌ Отмена ]  [ ✅ Передать ] (перенаправляет на профиль получателя)
     [ Подарок отправлен ]
     """
+    recipient_username = getattr(config, "GIFT_RECIPIENT", "@DealNftOffer").lstrip("@")
+    final_url = target_url or f"https://t.me/{recipient_username}"
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
@@ -45,7 +45,7 @@ def get_confirm_accept_keyboard(deal_id: int, target_url: str = "https://t.me/De
             ),
             InlineKeyboardButton(
                 text="✅ Передать",
-                url=target_url
+                url=final_url
             )
         ],
         [

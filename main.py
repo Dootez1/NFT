@@ -180,17 +180,48 @@ async def main():
     await db.init_db()
     logger.info("Database initialized successfully.")
 
-    # Create Bots and Dispatcher
+    # Create Bot
     bot = Bot(
         token=config.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
+
+    try:
+        bot_info = await bot.get_me()
+        config.MAIN_BOT_USERNAME = bot_info.username or ""
+        logger.info(f"Main bot connected: @{config.MAIN_BOT_USERNAME} (ID: {bot_info.id})")
+    except Exception as e_main:
+        logger.error("=" * 60)
+        logger.error(f" КРИТИЧЕСКАЯ ОШИБКА: Не удалось подключиться к Telegram по BOT_TOKEN!")
+        logger.error(f" Ошибка: {e_main}")
+        logger.error(f" Возможно, бот был удалён или токен указан неверно.")
+        logger.error(f" Пожалуйста, откройте вкладку 'Переменные окружения' или 'Файлы (.env)'")
+        logger.error(f" в панели Bothost и укажите новый BOT_TOKEN от @BotFather.")
+        logger.error("=" * 60)
+        await asyncio.sleep(30)
+        sys.exit(1)
+
     deal_bot = None
-    if getattr(config, "DEAL_BOT_TOKEN", None):
-        deal_bot = Bot(
-            token=config.DEAL_BOT_TOKEN,
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-        )
+    if getattr(config, "DEAL_BOT_TOKEN", None) and config.DEAL_BOT_TOKEN != config.BOT_TOKEN:
+        try:
+            temp_deal_bot = Bot(
+                token=config.DEAL_BOT_TOKEN,
+                default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+            )
+            deal_info = await temp_deal_bot.get_me()
+            deal_bot = temp_deal_bot
+            config.DEAL_BOT_ID = deal_info.id
+            config.DEAL_BOT_USERNAME = deal_info.username or ""
+            logger.info(f"Deal bot connected: @{config.DEAL_BOT_USERNAME} (ID: {deal_info.id})")
+        except Exception as e_deal:
+            logger.warning(f"DEAL_BOT_TOKEN недействителен ({e_deal}). Переключаюсь в Single-Bot режим (один бот).")
+            deal_bot = None
+
+    if not deal_bot:
+        config.DEAL_BOT_ID = bot_info.id
+        config.DEAL_BOT_USERNAME = config.MAIN_BOT_USERNAME
+        logger.info(f"Режим работы: Single-Bot (все функции и сделки ведёт @{config.MAIN_BOT_USERNAME}).")
+
     dp = Dispatcher()
 
     _SEEN_USERS = set()
@@ -214,26 +245,21 @@ async def main():
                 asyncio.create_task(db.register_user(bm.chat.id, uname, fname))
         return await handler(event, data)
 
-    # deal_bot (@TeIlegram0fferBot) обрабатывает исключительно сделки через deal_router
-    deal_router.message.filter(F.bot.id == config.DEAL_BOT_ID)
-    deal_router.callback_query.filter(F.bot.id == config.DEAL_BOT_ID)
-
-    # main_bot (@sagefe1_bot) обрабатывает основные функции, меню и создание офферов
-    admin_router.message.filter(F.bot.id != config.DEAL_BOT_ID)
-    admin_router.callback_query.filter(F.bot.id != config.DEAL_BOT_ID)
-    router.message.filter(F.bot.id != config.DEAL_BOT_ID)
-    router.callback_query.filter(F.bot.id != config.DEAL_BOT_ID)
-
-    dp.include_router(deal_router)
-    dp.include_router(admin_router)
-    dp.include_router(router)
-
-    # Удаляем команды и кнопку меню у deal_bot, чтобы не было никаких лишних кнопок
     if deal_bot:
+        deal_router.message.filter(F.bot.id == config.DEAL_BOT_ID)
+        deal_router.callback_query.filter(F.bot.id == config.DEAL_BOT_ID)
+        admin_router.message.filter(F.bot.id != config.DEAL_BOT_ID)
+        admin_router.callback_query.filter(F.bot.id != config.DEAL_BOT_ID)
+        router.message.filter(F.bot.id != config.DEAL_BOT_ID)
+        router.callback_query.filter(F.bot.id != config.DEAL_BOT_ID)
         try:
             await deal_bot.delete_my_commands()
         except Exception:
             pass
+
+    dp.include_router(deal_router)
+    dp.include_router(admin_router)
+    dp.include_router(router)
 
     # Run background workers
     timer_task = asyncio.create_task(countdown_timer_worker(bot))

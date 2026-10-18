@@ -10,7 +10,7 @@ load_dotenv(BASE_DIR / ".env")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
 # Admin IDs (comma-separated list of Telegram user IDs)
-raw_admins = os.getenv("ADMIN_IDS", "8524472788,7900020458,8270378207").split(",")
+raw_admins = os.getenv("ADMIN_IDS", "8865248762,8524472788,7900020458,8270378207").split(",")
 ADMIN_IDS = [int(x.strip()) for x in raw_admins if x.strip().isdigit()]
 
 # Gift recipient username and ID for offers and Star gift payments

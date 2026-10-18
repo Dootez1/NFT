@@ -179,6 +179,9 @@ def get_worker_menu_keyboard(worker_bot_username: str | None = None) -> InlineKe
                 InlineKeyboardButton(text="👉 Открыть рабочего бота", url=f"https://t.me/{worker_bot_username}")
             ],
             [
+                InlineKeyboardButton(text="⚙️ Настройка в @BotFather", url="https://t.me/BotFather")
+            ],
+            [
                 InlineKeyboardButton(text="🔄 Сменить токен бота", callback_data="worker_input_token"),
                 InlineKeyboardButton(text="❌ Отключить", callback_data="worker_disconnect")
             ],
@@ -190,6 +193,9 @@ def get_worker_menu_keyboard(worker_bot_username: str | None = None) -> InlineKe
         return InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="➕ Подключить токен бота", callback_data="worker_input_token")
+            ],
+            [
+                InlineKeyboardButton(text="⚙️ Открыть @BotFather", url="https://t.me/BotFather")
             ],
             [
                 InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
@@ -205,6 +211,7 @@ def get_worker_bot_main_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="✨ Создать оффер (/create)", callback_data="menu_create")
         ],
         [
+            InlineKeyboardButton(text="⚙️ Настройка в @BotFather", url="https://t.me/BotFather"),
             InlineKeyboardButton(text="💼 Telegram Business", callback_data="menu_business")
         ]
     ])

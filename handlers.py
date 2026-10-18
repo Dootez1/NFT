@@ -248,10 +248,19 @@ async def handle_menu_worker_bot(callback: CallbackQuery):
         bot_uname = worker.get("bot_username", "bot")
         text = (
             f"🤖 <b>Ваш рабочий бот:</b> @{bot_uname} (🟢 <b>Активен</b>)\n\n"
-            f"• <b>Статус:</b> Запущен на сервере и готов к работе\n"
-            f"• <b>Telegram Business:</b> Добавьте @{bot_uname} в <i>Настройки ➔ Telegram Business ➔ Чат-боты</i> на вашем аккаунте\n"
-            f"• <b>Создание офферов:</b> Откройте бота и отправьте /create\n\n"
-            f"<i>Если Telegram когда-либо ограничит этого бота, вы можете в 1 клик сменить токен ниже без потери подписки и данных.</i>"
+            f"⚙️ <b>ОБЯЗАТЕЛЬНАЯ НАСТРОЙКА В @BotFather:</b>\n\n"
+            f"1️⃣ <b>Включите инлайн-режим (/setinline):</b>\n"
+            f"• Откройте <b>@BotFather</b> ➔ отправьте <code>/setinline</code>\n"
+            f"• Выберите вашего бота <b>@{bot_uname}</b>\n"
+            f"• Введите любой текст (например: <code>Поиск подарков...</code>)\n"
+            f"⚠️ <i>Без этого кнопка «Отправить оффер» работать НЕ БУДЕТ!</i>\n\n"
+            f"2️⃣ <b>Включите обратную связь (/setinlinefeedback):</b>\n"
+            f"• Отправьте команду <code>/setinlinefeedback</code> в @BotFather\n"
+            f"• Выберите <b>@{bot_uname}</b> ➔ нажмите <b>Enabled (100%)</b>\n"
+            f"<i>Нужно для таймеров и авто-обновления карточек при сделке.</i>\n\n"
+            f"3️⃣ <b>Telegram Business (по желанию):</b>\n"
+            f"• Подключите @{bot_uname} в <i>Настройки ➔ Telegram Business ➔ Чат-боты</i> на вашем аккаунте для отправки прямо в диалог с продавцом.\n\n"
+            f"👉 <b>Для создания офферов:</b> перейдите в @{bot_uname} и отправьте команду <b>/create</b>."
         )
         try:
             await callback.message.edit_text(text, reply_markup=get_worker_menu_keyboard(bot_uname), parse_mode="HTML")
@@ -259,11 +268,20 @@ async def handle_menu_worker_bot(callback: CallbackQuery):
             await callback.message.answer(text, reply_markup=get_worker_menu_keyboard(bot_uname), parse_mode="HTML")
     else:
         text = (
-            "🤖 <b>Подключение личного рабочего бота</b>\n\n"
-            "1. Откройте официального бота <b>@BotFather</b> в Telegram.\n"
-            "2. Отправьте команду <code>/newbot</code> и укажите нейтральное имя (например: <i>TradeSwapBot</i>).\n"
-            "3. Скопируйте полученный <b>HTTP API Token</b> и нажмите кнопку ниже для привязки.\n\n"
-            "⚡️ <i>Все ваши офферы и сделки будут работать через вашего личного бота, защищая основной сервис от блокировок.</i>"
+            "🤖 <b>Подключение и обязательная настройка личного бота</b>\n\n"
+            "Перед привязкой токена обязательно выполните шаги в <b>@BotFather</b>:\n\n"
+            "1️⃣ <b>Создайте нового бота:</b>\n"
+            "• Откройте официального бота <b>@BotFather</b> ➔ отправьте <code>/newbot</code>\n"
+            "• Задайте нейтральное имя и юзернейм (например: <i>TradeSwapBot</i>)\n"
+            "• Скопируйте полученный <b>HTTP API Token</b>.\n\n"
+            "2️⃣ <b>ОБЯЗАТЕЛЬНО включите инлайн-режим (/setinline):</b>\n"
+            "• В @BotFather отправьте команду <code>/setinline</code>\n"
+            "• Выберите вашего бота и отправьте плейсхолдер: <code>подарок</code>\n"
+            "⚠️ <i>Без этого кнопка «Отправить оффер» не сможет работать!</i>\n\n"
+            "3️⃣ <b>Включите трекинг инлайна (/setinlinefeedback):</b>\n"
+            "• В @BotFather отправьте команду <code>/setinlinefeedback</code>\n"
+            "• Выберите вашего бота и нажмите кнопку <b>Enabled (100%)</b>.\n\n"
+            "⚡️ <i>После этого нажмите кнопку ниже и отправьте полученный токен:</i>"
         )
         try:
             await callback.message.edit_text(text, reply_markup=get_worker_menu_keyboard(None), parse_mode="HTML")
@@ -321,13 +339,18 @@ async def process_worker_token_input(message: Message, state: FSMContext):
     if ok:
         success_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="👉 Открыть рабочего бота", url=f"https://t.me/{res}")],
+            [InlineKeyboardButton(text="⚙️ Настроить в @BotFather", url="https://t.me/BotFather")],
             [InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")]
         ])
         await message.answer(
             f"✅ <b>Рабочий бот @{res} успешно подключён и запущен!</b>\n\n"
-            f"1. Перейдите в вашего бота @{res} и отправьте /start.\n"
-            f"2. Для создания предложений используйте /create прямо в нём.\n"
-            f"3. Для отправки в личные диалоги подключите @{res} в <i>Настройки ➔ Telegram Business ➔ Чат-боты</i>.",
+            f"🚨 <b>ОБЯЗАТЕЛЬНЫЙ ЧЕК-ЛИСТ НАСТРОЙКИ (в @BotFather):</b>\n\n"
+            f"1️⃣ <b>/setinline</b> ➔ выберите @{res} ➔ отправьте текст <code>подарок</code>\n"
+            f"⚠️ <i>(ОБЯЗАТЕЛЬНО! Без этого кнопка «Отправить оффер» не будет работать!)</i>\n\n"
+            f"2️⃣ <b>/setinlinefeedback</b> ➔ выберите @{res} ➔ нажмите <b>Enabled (100%)</b>\n"
+            f"<i>(ОБЯЗАТЕЛЬНО для корректной работы таймеров и статусов)</i>\n\n"
+            f"3️⃣ <b>Telegram Business</b> (по желанию) ➔ добавьте @{res} в <i>Настройки ➔ Telegram Business ➔ Чат-боты</i>.\n\n"
+            f"👉 <b>Теперь откройте @{res} и отправьте /create для создания оффера!</b>",
             reply_markup=success_kb,
             parse_mode="HTML"
         )

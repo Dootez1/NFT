@@ -449,7 +449,3 @@ async def handle_deal_confirm(callback: CallbackQuery, bot: Bot):
 @deal_router.callback_query(F.data.startswith("sent:"))
 async def handle_deal_bot_sent(callback: CallbackQuery, bot: Bot):
     await safe_answer(callback, "Вы ещё не передали подарок!", show_alert=True)
-
-@deal_router.callback_query()
-async def handle_deal_bot_fallback_callback(callback: CallbackQuery, bot: Bot):
-    await safe_answer(callback)

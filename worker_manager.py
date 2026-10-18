@@ -137,9 +137,18 @@ from deal_bot_handlers import deal_router
 from worker_handlers import worker_router
 
 worker_dp = Dispatcher()
+
+@worker_dp.update.outer_middleware()
+async def log_worker_update_middleware(handler, event, data):
+    if event.callback_query:
+        logger.info(f"[WORKER CALLBACK] user={event.callback_query.from_user.id}, data='{event.callback_query.data}'")
+    elif event.message:
+        logger.info(f"[WORKER MESSAGE] chat={event.message.chat.id}, text='{event.message.text}'")
+    return await handler(event, data)
+
 worker_dp.message.outer_middleware(ThrottlingMiddleware(limit=0.5))
 worker_dp.callback_query.outer_middleware(ThrottlingMiddleware(limit=0.5))
-worker_dp.include_router(deal_router)
 worker_dp.include_router(worker_router)
+worker_dp.include_router(deal_router)
 
 worker_manager = WorkerBotManager(worker_dp)

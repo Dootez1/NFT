@@ -262,7 +262,7 @@ async def handle_create_price_input(message: Message, state: FSMContext):
         parse_mode="HTML"
     )
 
-@worker_router.callback_query(F.data == "create_toggle_lang", CreateOfferStates.confirm_send)
+@worker_router.callback_query(F.data == "create_toggle_lang")
 async def handle_create_toggle_lang(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     curr_lang = data.get("lang", "RU")
@@ -292,7 +292,7 @@ async def handle_create_toggle_lang(callback: CallbackQuery, state: FSMContext):
         pass
     await safe_answer(callback)
 
-@worker_router.callback_query(F.data == "create_change_recipient", CreateOfferStates.confirm_send)
+@worker_router.callback_query(F.data == "create_change_recipient")
 async def handle_create_change_recipient(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     is_premium = await db.is_subscription_active(user_id, required_plan="premium")
@@ -331,170 +331,186 @@ async def handle_create_recipient_input(message: Message, state: FSMContext):
         parse_mode="HTML"
     )
 
-@worker_router.callback_query(F.data == "create_cancel", CreateOfferStates.confirm_send)
+@worker_router.callback_query(F.data == "create_cancel")
 async def handle_create_cancel(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.answer("❌ Создание оффера отменено.", reply_markup=get_worker_bot_main_keyboard())
     await safe_answer(callback, "Отменено")
 
-@worker_router.callback_query(F.data == "create_send", CreateOfferStates.confirm_send)
+@worker_router.callback_query(F.data == "create_send")
 async def handle_create_send(callback: CallbackQuery, state: FSMContext, bot: Bot):
-    user = callback.from_user
-    data = await state.get_data()
-    nft_data = data.get("nft_data")
-    price = data.get("price", 0)
-    currency = data.get("currency", "STARS")
-    recipient = data.get("recipient") or config.GIFT_RECIPIENT
-    target_seller = data.get("real_owner", "Владелец")
-    clean_seller = target_seller.lstrip("@").strip()
-    lang = data.get("lang", "RU")
+    try:
+        user = callback.from_user
+        data = await state.get_data()
+        nft_data = data.get("nft_data")
+        if not nft_data:
+            await safe_answer(callback, "Данные оффера устарели. Пожалуйста, создайте заново через /create", show_alert=True)
+            return
 
-    deal_id = await db.create_deal(
-        buyer_id=user.id,
-        buyer_username=user.username,
-        buyer_first_name=user.first_name,
-        seller_id=None,
-        seller_username=target_seller,
-        nft_name=nft_data["name"],
-        nft_number=nft_data["number"],
-        nft_url=nft_data["url"],
-        image_url=nft_data.get("image_url"),
-        stars_amount=price,
-        chat_id=callback.message.chat.id,
-        currency=currency,
-        recipient=recipient,
-        lang=lang
-    )
-    timer_str = "5 h. 59 min." if lang == "ENG" else "5 ч. 59 мин."
-    config.DEAL_LAST_TIMERS[deal_id] = timer_str
+        price = data.get("price", 0)
+        currency = data.get("currency", "STARS")
+        recipient = data.get("recipient") or config.GIFT_RECIPIENT
+        target_seller = data.get("real_owner", "Владелец")
+        clean_seller = target_seller.lstrip("@").strip()
+        lang = data.get("lang", "RU")
 
-    formatted_number = format_number(nft_data["number"])
-    curr_symbol = "GRAM" if currency == "GRAM" else "⭐️"
-    stars_txt = f"{price} {curr_symbol}" if curr_symbol == "GRAM" else f"{price} ⭐️"
+        deal_id = await db.create_deal(
+            buyer_id=user.id,
+            buyer_username=user.username,
+            buyer_first_name=user.first_name,
+            seller_id=None,
+            seller_username=target_seller,
+            nft_name=nft_data["name"],
+            nft_number=nft_data["number"],
+            nft_url=nft_data["url"],
+            image_url=nft_data.get("image_url"),
+            stars_amount=price,
+            chat_id=callback.message.chat.id,
+            currency=currency,
+            recipient=recipient,
+            lang=lang
+        )
+        timer_str = "5 h. 59 min." if lang == "ENG" else "5 ч. 59 мин."
+        config.DEAL_LAST_TIMERS[deal_id] = timer_str
 
-    bot_info = await bot.get_me()
-    bot_username = bot_info.username or "bot"
+        formatted_number = format_number(nft_data["number"])
+        curr_symbol = "GRAM" if currency == "GRAM" else "⭐️"
+        stars_txt = f"{price} {curr_symbol}" if curr_symbol == "GRAM" else f"{price} ⭐️"
 
-    offer_text, clean_offer_text = build_randomized_offer_text(
-        nft_name=nft_data["name"],
-        nft_number=formatted_number,
-        nft_url=nft_data["url"],
-        stars_txt=stars_txt,
-        timer_str=timer_str,
-        lang=lang
-    )
+        bot_info = await bot.get_me()
+        bot_username = bot_info.username or "bot"
 
-    business_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, bot_username=bot_username, is_business=True)
-    pm_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, bot_username=bot_username, is_business=False)
+        offer_text, clean_offer_text = build_randomized_offer_text(
+            nft_name=nft_data["name"],
+            nft_number=formatted_number,
+            nft_url=nft_data["url"],
+            stars_txt=stars_txt,
+            timer_str=timer_str,
+            lang=lang
+        )
 
-    link_opts = LinkPreviewOptions(
-        is_disabled=False,
-        url=nft_data["url"],
-        prefer_large_media=True,
-        show_above_text=True
-    )
+        business_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, bot_username=bot_username, is_business=True)
+        pm_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, bot_username=bot_username, is_business=False)
 
-    target_chat_id = None
-    target_business_conn_id = None
+        link_opts = LinkPreviewOptions(
+            is_disabled=False,
+            url=nft_data["url"],
+            prefer_large_media=True,
+            show_above_text=True
+        )
 
-    if clean_seller.isdigit():
-        target_chat_id = int(clean_seller)
-    else:
-        user_row = await db.find_user(clean_seller)
-        if user_row:
-            target_chat_id = user_row["user_id"]
+        target_chat_id = None
+        target_business_conn_id = None
 
-    buyer_conn = await db.get_business_connection_by_user(user.id)
-    has_own_biz = bool(buyer_conn and buyer_conn.get("is_enabled") and buyer_conn.get("can_reply"))
-    if has_own_biz:
-        target_business_conn_id = buyer_conn.get("connection_id")
+        if clean_seller.isdigit():
+            target_chat_id = int(clean_seller)
+        else:
+            user_row = await db.find_user(clean_seller)
+            if user_row:
+                target_chat_id = user_row["user_id"]
 
-    sent_to_owner = False
-    sent_via_biz = False
-    sent_msg = None
+        buyer_conn = await db.get_business_connection_by_user(user.id)
+        has_own_biz = bool(buyer_conn and buyer_conn.get("is_enabled") and buyer_conn.get("can_reply"))
+        if has_own_biz:
+            target_business_conn_id = buyer_conn.get("connection_id")
 
-    if target_chat_id and target_business_conn_id:
+        sent_to_owner = False
+        sent_via_biz = False
+        sent_msg = None
+
+        if target_chat_id and target_business_conn_id:
+            try:
+                sent_msg = await bot.send_message(
+                    business_connection_id=target_business_conn_id,
+                    chat_id=target_chat_id,
+                    text=offer_text,
+                    reply_markup=business_keyboard,
+                    link_preview_options=link_opts,
+                    parse_mode="HTML"
+                )
+                sent_to_owner = True
+                sent_via_biz = True
+                await db.update_deal_target(deal_id, target_chat_id, sent_msg.message_id, target_business_conn_id)
+            except Exception as e_biz:
+                logger.warning(f"Business send failed: {e_biz}")
+
+        if not sent_to_owner and target_chat_id:
+            try:
+                sent_msg = await bot.send_message(
+                    chat_id=target_chat_id,
+                    text=offer_text,
+                    reply_markup=pm_keyboard,
+                    link_preview_options=link_opts,
+                    parse_mode="HTML"
+                )
+                sent_to_owner = True
+                await db.update_deal_target(deal_id, target_chat_id, sent_msg.message_id, None)
+            except Exception:
+                pass
+
         try:
-            sent_msg = await bot.send_message(
-                business_connection_id=target_business_conn_id,
-                chat_id=target_chat_id,
-                text=offer_text,
-                reply_markup=business_keyboard,
-                link_preview_options=link_opts,
-                parse_mode="HTML"
-            )
-            sent_to_owner = True
-            sent_via_biz = True
-            await db.update_deal_target(deal_id, target_chat_id, sent_msg.message_id, target_business_conn_id)
-        except Exception as e_biz:
-            logger.warning(f"Business send failed: {e_biz}")
-
-    if not sent_to_owner and target_chat_id:
-        try:
-            sent_msg = await bot.send_message(
-                chat_id=target_chat_id,
-                text=offer_text,
-                reply_markup=pm_keyboard,
-                link_preview_options=link_opts,
-                parse_mode="HTML"
-            )
-            sent_to_owner = True
-            await db.update_deal_target(deal_id, target_chat_id, sent_msg.message_id, None)
+            await callback.message.delete()
         except Exception:
             pass
 
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
+        chat_id = callback.message.chat.id
 
-    if has_own_biz and sent_via_biz:
-        await callback.message.answer(
-            f"✅ <b>Оффер успешно отправлен владельцу подарка ({target_seller})!</b>\n\n"
-            f"🎁 <b>Подарок:</b> <b>{nft_data['name']} #{formatted_number}</b>\n"
-            f"⭐ <b>Сумма:</b> <b>{stars_txt}</b>\n"
-            f"👤 <b>Получатель:</b> <b>{recipient}</b>\n\n"
-            f"<i>Когда {target_seller} примет или отклонит оффер, вы сразу получите уведомление.</i>",
-            parse_mode="HTML"
-        )
-    else:
-        share_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Отправить оффер",
-                    switch_inline_query=f"deal_{deal_id}"
-                )
-            ]
-        ])
-
-        if sent_to_owner:
-            extra_info = (
-                f"⚡ <i>Оффер доставлен ботом в диалог с {target_seller}.</i>\n\n"
-                f"👉 <b>Нажмите кнопку ниже, чтобы переслать оффер:</b>"
-            )
-        elif has_own_biz:
-            extra_info = (
-                f"ℹ️ <i>Бот подключен к вашему Telegram Business, но диалог с {target_seller} ещё не был начат (Telegram требует числовой ID для первой отправки).</i>\n\n"
-                f"👉 <b>Нажмите кнопку ниже, чтобы отправить оффер в чат в 1 клик:</b>"
+        if has_own_biz and sent_via_biz:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"✅ <b>Оффер успешно отправлен владельцу подарка ({target_seller})!</b>\n\n"
+                    f"🎁 <b>Подарок:</b> <b>{nft_data['name']} #{formatted_number}</b>\n"
+                    f"⭐ <b>Сумма:</b> <b>{stars_txt}</b>\n"
+                    f"👤 <b>Получатель:</b> <b>{recipient}</b>\n\n"
+                    f"<i>Когда {target_seller} примет или отклонит оффер, вы сразу получите уведомление.</i>"
+                ),
+                parse_mode="HTML"
             )
         else:
-            extra_info = (
-                f"💡 <i>На этом аккаунте не подключен Telegram Business к боту (или бот не добавлен в Чат-боты).</i>\n\n"
-                f"👉 <b>Нажмите кнопку ниже, чтобы отправить оффер:</b>"
+            share_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="Отправить оффер",
+                        switch_inline_query=f"deal_{deal_id}"
+                    )
+                ]
+            ])
+
+            if sent_to_owner:
+                extra_info = (
+                    f"⚡ <i>Оффер доставлен ботом в диалог с {target_seller}.</i>\n\n"
+                    f"👉 <b>Нажмите кнопку ниже, чтобы переслать оффер:</b>"
+                )
+            elif has_own_biz:
+                extra_info = (
+                    f"ℹ️ <i>Бот подключен к вашему Telegram Business, но диалог с {target_seller} ещё не был начат (Telegram требует числовой ID для первой отправки).</i>\n\n"
+                    f"👉 <b>Нажмите кнопку ниже, чтобы отправить оффер в чат в 1 клик:</b>"
+                )
+            else:
+                extra_info = (
+                    f"💡 <i>На этом аккаунте не подключен Telegram Business к боту (или бот не добавлен в Чат-боты).</i>\n\n"
+                    f"👉 <b>Нажмите кнопку ниже, чтобы отправить оффер:</b>"
+                )
+
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"✅ <b>Оффер сформирован для {target_seller}!</b>\n\n"
+                    f"🎁 <b>Подарок:</b> <b>{nft_data['name']} #{formatted_number}</b>\n"
+                    f"⭐ <b>Сумма:</b> <b>{stars_txt}</b>\n"
+                    f"👤 <b>Получатель:</b> <b>{recipient}</b>\n\n"
+                    f"{extra_info}"
+                ),
+                reply_markup=share_kb,
+                parse_mode="HTML"
             )
 
-        await callback.message.answer(
-            f"✅ <b>Оффер сформирован для {target_seller}!</b>\n\n"
-            f"🎁 <b>Подарок:</b> <b>{nft_data['name']} #{formatted_number}</b>\n"
-            f"⭐ <b>Сумма:</b> <b>{stars_txt}</b>\n"
-            f"👤 <b>Получатель:</b> <b>{recipient}</b>\n\n"
-            f"{extra_info}",
-            reply_markup=share_kb,
-            parse_mode="HTML"
-        )
-
-    await state.clear()
-    await safe_answer(callback, "Оффер отправлен!")
+        await state.clear()
+        await safe_answer(callback, "Оффер отправлен!")
+    except Exception as e:
+        logger.exception(f"Error in handle_create_send: {e}")
+        await safe_answer(callback, f"Ошибка при отправке: {e}", show_alert=True)
 
 # --- TELEGRAM BUSINESS & INLINE QUERY HANDLERS ---
 

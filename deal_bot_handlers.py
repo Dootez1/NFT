@@ -112,7 +112,6 @@ async def handle_deal_bot_message(message: Message, bot: Bot):
 
     if deal_lang == "ENG":
         screen2_text = (
-            f'<a href="{deal["nft_url"]}">&#8203;</a>'
             f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
             f"<b>Deal amount:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
             f"<b>Guarantor:</b> {buyer_display}\n"
@@ -126,7 +125,6 @@ async def handle_deal_bot_message(message: Message, bot: Bot):
         )
     else:
         screen2_text = (
-            f'<a href="{deal["nft_url"]}">&#8203;</a>'
             f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
             f"<b>Сумма сделки:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
             f"<b>Гарант сделки:</b> {buyer_display}\n"

@@ -77,13 +77,11 @@ async def countdown_timer_worker(bot: Bot):
 
                 if deal_lang == "ENG":
                     msg_text = (
-                        f'<a href="{deal["nft_url"]}">&#8203;</a>'
                         f"A user offers you <b>{stars_txt}</b> for gift <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>.\n\n"
                         f"Expires in {timer_str}."
                     )
                 else:
                     msg_text = (
-                        f'<a href="{deal["nft_url"]}">&#8203;</a>'
                         f"Пользователь предлагает Вам <b>{stars_txt}</b> за подарок <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>.\n\n"
                         f"Истекает через {timer_str}."
                     )
@@ -140,14 +138,12 @@ async def expiration_checker(bot: Bot):
                 curr_txt = "GRAM" if deal.get("currency") == "GRAM" else ("Stars" if deal_lang == "ENG" else "звёзд")
                 if deal_lang == "ENG":
                     expired_text = (
-                        f'<a href="{deal["nft_url"]}">&#8203;</a>'
                         f"<b>OFFER EXPIRED</b>\n\n"
                         f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{deal['nft_number']}</b></a>\n"
                         f"<b>Amount:</b> <b>{deal['stars_amount']} {curr_txt}</b>"
                     )
                 else:
                     expired_text = (
-                        f'<a href="{deal["nft_url"]}">&#8203;</a>'
                         f"<b>СРОК ДЕЙСТВИЯ ПРЕДЛОЖЕНИЯ ИСТЁК</b>\n\n"
                         f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{deal['nft_number']}</b></a>\n"
                         f"<b>Сумма:</b> <b>{deal['stars_amount']} {curr_txt}</b>"

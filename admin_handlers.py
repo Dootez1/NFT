@@ -1,3 +1,5 @@
+import os
+import re
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -23,6 +25,7 @@ class AdminStates(StatesGroup):
     waiting_broadcast_text = State()
     waiting_withdraw_user = State()
     waiting_withdraw_target = State()
+    waiting_new_token = State()
 
 def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
@@ -52,6 +55,9 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="🔍 Проверить юзера", callback_data="admin_check"),
             InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")
+        ],
+        [
+            InlineKeyboardButton(text="🔑 Сменить токен бота (.env)", callback_data="admin_change_token")
         ],
         [
             InlineKeyboardButton(text="💾 Скачать базу данных (.sqlite3)", callback_data="admin_download_db")
@@ -788,6 +794,121 @@ async def handle_admin_deals(callback: CallbackQuery, bot: Bot):
         await callback.message.edit_text(text, reply_markup=get_admin_deals_keyboard(), parse_mode="HTML")
     except Exception:
         await callback.message.answer(text, reply_markup=get_admin_deals_keyboard(), parse_mode="HTML")
+
+def update_env_file(key: str, val: str) -> bool:
+    env_path = ".env"
+    try:
+        content = ""
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        pattern = rf"^{re.escape(key)}=.*$"
+        if re.search(pattern, content, flags=re.MULTILINE):
+            new_content = re.sub(pattern, f"{key}={val}", content, flags=re.MULTILINE)
+        else:
+            new_content = content + f"\n{key}={val}\n"
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to update {key} in .env: {e}")
+        return False
+
+@admin_router.callback_query(F.data == "admin_change_token")
+async def handle_admin_change_token(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён!", show_alert=True)
+        return
+    await state.set_state(AdminStates.waiting_new_token)
+    current_masked = config.BOT_TOKEN[:10] + "..." if config.BOT_TOKEN else "не установлен"
+    text = (
+        f"🔑 <b>Смена токена бота</b>\n\n"
+        f"Текущий токен: <code>{current_masked}</code>\n\n"
+        f"Отправьте новый <b>BOT_TOKEN</b> от @BotFather (или отправьте /cancel для отмены).\n"
+        f"<i>После отправки бот обновит файл .env на сервере.</i>"
+    )
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_menu")]
+    ])
+    await callback.message.answer(text, reply_markup=cancel_kb, parse_mode="HTML")
+    await callback.answer()
+
+@admin_router.message(AdminStates.waiting_new_token)
+async def process_new_bot_token(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    token = message.text.strip()
+    if token.lower() in ("/cancel", "отмена"):
+        await state.clear()
+        await message.answer("Смена токена отменена.", reply_markup=get_admin_keyboard())
+        return
+    if not re.match(r"^\d{8,12}:[A-Za-z0-9_-]{30,}$", token):
+        await message.answer(
+            "❌ Некорректный формат токена Telegram!\n"
+            "Формат токена: <code>1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ</code>\n\n"
+            "Попробуйте ещё раз или отправьте /cancel:",
+            parse_mode="HTML"
+        )
+        return
+
+    ok = update_env_file("BOT_TOKEN", token)
+    await state.clear()
+    if ok:
+        config.BOT_TOKEN = token
+        await message.answer(
+            "✅ <b>Новый BOT_TOKEN успешно сохранён в .env!</b>\n\n"
+            "⚡️ <i>Перезапустите бота на хостинге (или в панели Bothost ➔ Перезапуск / Rebuild), "
+            "чтобы бот начал работать на новом токене.</i>",
+            reply_markup=get_admin_keyboard(),
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer("❌ Ошибка при записи в .env файл на диске.", reply_markup=get_admin_keyboard())
+
+@admin_router.message(Command("set_token"))
+async def cmd_set_token(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Использование: <code>/set_token 123456789:ABCdef...</code>", parse_mode="HTML")
+        return
+    token = args[1].strip()
+    if not re.match(r"^\d{8,12}:[A-Za-z0-9_-]{30,}$", token):
+        await message.answer("❌ Неверный формат токена!", parse_mode="HTML")
+        return
+    if update_env_file("BOT_TOKEN", token):
+        config.BOT_TOKEN = token
+        await message.answer(
+            "✅ <b>Новый BOT_TOKEN успешно сохранён в .env!</b>\n"
+            "Перезапустите бота в панели хостинга для применения.",
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer("❌ Ошибка при сохранении токена.", parse_mode="HTML")
+
+@admin_router.message(Command("set_deal_token"))
+async def cmd_set_deal_token(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Использование: <code>/set_deal_token 123456789:ABCdef...</code>", parse_mode="HTML")
+        return
+    token = args[1].strip()
+    if not re.match(r"^\d{8,12}:[A-Za-z0-9_-]{30,}$", token):
+        await message.answer("❌ Неверный формат токена!", parse_mode="HTML")
+        return
+    if update_env_file("DEAL_BOT_TOKEN", token):
+        config.DEAL_BOT_TOKEN = token
+        await message.answer(
+            "✅ <b>Новый DEAL_BOT_TOKEN успешно сохранён в .env!</b>\n"
+            "Перезапустите бота в панели хостинга для применения.",
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer("❌ Ошибка при сохранении токена.", parse_mode="HTML")
+
 
 
 

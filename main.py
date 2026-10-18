@@ -13,7 +13,6 @@ from handlers import (
     safe_edit_deal_message, get_deal_buyer_info, star_gifts_background_checker
 )
 from admin_handlers import admin_router
-from deal_bot_handlers import deal_router
 from middlewares import ThrottlingMiddleware
 from worker_manager import worker_manager
 
@@ -251,19 +250,21 @@ async def main():
                 asyncio.create_task(db.register_user(bm.chat.id, uname, fname))
         return await handler(event, data)
 
-    if deal_bot:
-        deal_router.message.filter(F.bot.id == config.DEAL_BOT_ID)
-        deal_router.callback_query.filter(F.bot.id == config.DEAL_BOT_ID)
-        admin_router.message.filter(F.bot.id != config.DEAL_BOT_ID)
-        admin_router.callback_query.filter(F.bot.id != config.DEAL_BOT_ID)
-        router.message.filter(F.bot.id != config.DEAL_BOT_ID)
-        router.callback_query.filter(F.bot.id != config.DEAL_BOT_ID)
+    legacy_deal_task = None
+    if deal_bot and deal_bot.token != bot.token:
         try:
             await deal_bot.delete_my_commands()
         except Exception:
             pass
+        from worker_manager import worker_dp
+        legacy_deal_task = asyncio.create_task(
+            worker_dp.start_polling(
+                deal_bot,
+                handle_signals=False,
+                allowed_updates=["message", "callback_query"]
+            )
+        )
 
-    dp.include_router(deal_router)
     dp.include_router(admin_router)
     dp.include_router(router)
 
@@ -277,14 +278,10 @@ async def main():
     ton_task = asyncio.create_task(ton_background_checker(bot))
     star_gifts_task = asyncio.create_task(star_gifts_background_checker(bot))
 
-    polling_bots = [bot]
-    if deal_bot and deal_bot.token != bot.token:
-        polling_bots.append(deal_bot)
-
-    logger.info(f"Starting Master bot polling ({len(polling_bots)} bot(s)) with Anti-DDoS & Worker Manager...")
+    logger.info("Starting Master bot polling with Anti-DDoS & Worker Manager...")
     try:
         await dp.start_polling(
-            *polling_bots,
+            bot,
             handle_signals=False,
             allowed_updates=[
                 "message",
@@ -300,6 +297,8 @@ async def main():
             ]
         )
     finally:
+        if legacy_deal_task:
+            legacy_deal_task.cancel()
         timer_task.cancel()
         checker_task.cancel()
         ton_task.cancel()

@@ -588,7 +588,7 @@ async def handle_pay_stargift(callback: CallbackQuery):
         f"<b>Инструкция по оплате:</b>\n"
         f"1. Нажмите кнопку <b>«🎁 Открыть профиль и подарить {price} ⭐️»</b> ниже.\n"
         f"2. В профиле <b>{config.GIFT_RECIPIENT}</b> нажмите на три точки `⋮` в правом верхнем углу ➡️ <b>«Отправить подарок»</b>.\n"
-        f"3. Выберите любой подарок стоимостью от <b>{price} Stars</b> (отправляйте <u>НЕ анонимно</u>, чтобы бот распознал ваш аккаунт).\n"
+        f"3. Отправьте один или несколько подарков на общую сумму от <b>{price} Stars</b> (можно отправить несколько небольших подарков частями, бот автоматически просуммирует их! Главное — отправляйте <u>НЕ анонимно</u>, чтобы система распознала ваш аккаунт).\n"
         f"4. После отправки вернитесь в этот диалог и нажмите <b>«🔄 Проверить получение подарка»</b>.\n\n"
         f"<i>Звёзды поступят напрямую на личный профиль, а бот мгновенно выдаст подписку!</i>"
     )
@@ -629,52 +629,69 @@ async def handle_check_gift_sub(callback: CallbackQuery, bot: Bot):
 
     try:
         user_gifts = await bot.get_user_gifts(user_id=config.GIFT_RECIPIENT_ID)
-        found_gift = None
+        gifts_list = user_gifts.gifts if user_gifts and user_gifts.gifts else []
 
-        for g in user_gifts.gifts:
+        unused_user_gifts = []
+        total_user_stars = 0
+
+        for g in gifts_list:
             sender = getattr(g, "sender_user", None)
             if not sender or sender.id != user_id:
                 continue
 
             inner_gift = getattr(g, "gift", None)
             star_count = getattr(inner_gift, "star_count", 0) if inner_gift else 0
-            if star_count < price:
+            if star_count <= 0:
                 continue
 
-            gift_unique_id = getattr(g, "owned_gift_id", None) or f"gift_{user_id}_{g.send_date}_{star_count}"
+            gift_unique_id = getattr(g, "owned_gift_id", None) or f"gift_{user_id}_{getattr(g, 'send_date', 0)}_{star_count}"
             already_used = await db.is_charge_id_used(gift_unique_id)
             if already_used:
                 continue
 
-            found_gift = (gift_unique_id, star_count)
-            break
+            unused_user_gifts.append({
+                "gift_id": gift_unique_id,
+                "stars": star_count,
+                "gift": g
+            })
+            total_user_stars += star_count
 
-        if found_gift:
-            charge_id, paid_stars = found_gift
+        if total_user_stars >= price:
+            effective_plan = plan
+            effective_plan_name = plan_name
+            if total_user_stars >= SUB_PREMIUM_PRICE:
+                effective_plan = "premium"
+                effective_plan_name = "👑 Premium (100% профита)"
+            elif total_user_stars >= SUB_PRO_PRICE and plan != "premium":
+                effective_plan = "pro"
+                effective_plan_name = "💎 PRO / Инлайн"
 
-            await db.record_payment(
-                user_id=user.id,
-                amount=paid_stars,
-                currency="XTR",
-                charge_id=charge_id,
-                payload=f"gift_sub_{plan}"
-            )
+            for item in unused_user_gifts:
+                await db.record_payment(
+                    user_id=user.id,
+                    amount=item["stars"],
+                    currency="XTR",
+                    charge_id=item["gift_id"],
+                    payload=f"gift_sub_{effective_plan}"
+                )
 
+            primary_charge = unused_user_gifts[0]["gift_id"]
             new_expires_at = await db.add_or_extend_subscription(
                 user_id=user.id,
                 username=user.username,
                 first_name=user.first_name,
                 days=SUB_DURATION_DAYS,
-                plan=plan,
-                charge_id=charge_id
+                plan=effective_plan,
+                charge_id=primary_charge
             )
 
             date_str = format_date_display(new_expires_at)
             success_text = (
-                "🎉 <b>Подарок получен и подтверждён автоматически!</b>\n\n"
-                f"Тариф: <b>{plan_name}</b>\n"
-                f"Получено: <b>{paid_stars} Stars ⭐️</b>\n"
-                f"Срок действия: до <b>{date_str}</b>\n\n"
+                "🎉 <b>Подарки получены и подтверждены автоматически!</b>\n\n"
+                f"• Тариф: <b>{effective_plan_name}</b>\n"
+                f"• Подарков зачислено: <b>{len(unused_user_gifts)} шт.</b>\n"
+                f"• Общая сумма: <b>{total_user_stars} Stars ⭐️</b>\n"
+                f"• Срок действия: до <b>{date_str}</b>\n\n"
                 "Подписка успешно активирована, приятного использования!"
             )
             try:
@@ -687,9 +704,9 @@ async def handle_check_gift_sub(callback: CallbackQuery, bot: Bot):
                 await bot.send_message(
                     chat_id=config.GIFT_RECIPIENT_ID,
                     text=(
-                        f"⚡️ <b>Автоматическая оплата подписки подарком!</b>\n\n"
+                        f"⚡️ <b>Автоматическая оплата подписки подарками!</b>\n\n"
                         f"• Пользователь: {username_display} (ID: <code>{user.id}</code>)\n"
-                        f"• Тариф: <b>{plan_name}</b> ({paid_stars} ⭐️)\n"
+                        f"• Тариф: <b>{effective_plan_name}</b> (Сумма: {total_user_stars} ⭐️, {len(unused_user_gifts)} шт.)\n"
                         f"• Подписка активирована моментально через API!"
                     ),
                     parse_mode="HTML"
@@ -697,6 +714,15 @@ async def handle_check_gift_sub(callback: CallbackQuery, bot: Bot):
             except Exception:
                 pass
             return
+        elif total_user_stars > 0:
+            diff = price - total_user_stars
+            await safe_answer(
+                callback,
+                f"⚠️ Найдено подарков на {total_user_stars} из {price} ⭐️!\nНе хватает ещё {diff} ⭐️. Отправьте ещё подарок на сумму от {diff} Stars и нажмите «Проверить оплату» снова.",
+                show_alert=True
+            )
+            return
+
     except Exception as e:
         logger.error(f"Error checking user gifts automatically: {e}")
 
@@ -710,12 +736,16 @@ async def handle_check_gift_sub(callback: CallbackQuery, bot: Bot):
 async def check_all_incoming_star_gifts(bot: Bot):
     """
     Фоновая проверка входящих Telegram-подарков за Stars в профиле получателя (GIFT_RECIPIENT_ID).
-    Автоматически распознает подарки, определяет тариф и активирует подписку без нажатия кнопок.
+    Суммирует все подарки от каждого пользователя, автоматически распознает сумму,
+    определяет тариф и активирует подписку без нажатия кнопок.
     """
     try:
         user_gifts = await bot.get_user_gifts(user_id=config.GIFT_RECIPIENT_ID)
         if not user_gifts or not user_gifts.gifts:
             return
+
+        user_gifts_map: dict[int, list[dict]] = {}
+        user_senders: dict[int, Any] = {}
 
         for g in user_gifts.gifts:
             sender = getattr(g, "sender_user", None)
@@ -725,33 +755,52 @@ async def check_all_incoming_star_gifts(bot: Bot):
             user_id = sender.id
             inner_gift = getattr(g, "gift", None)
             star_count = getattr(inner_gift, "star_count", 0) if inner_gift else 0
-            if star_count < SUB_STANDARD_PRICE:
+            if star_count <= 0:
                 continue
 
-            # Определяем тариф по сумме звёзд в подарке
-            if star_count >= SUB_PREMIUM_PRICE:
+            gift_unique_id = getattr(g, "owned_gift_id", None) or f"gift_{user_id}_{getattr(g, 'send_date', 0)}_{star_count}"
+            already_used = await db.is_charge_id_used(gift_unique_id)
+            if already_used:
+                continue
+
+            if user_id not in user_gifts_map:
+                user_gifts_map[user_id] = []
+                user_senders[user_id] = sender
+
+            user_gifts_map[user_id].append({
+                "gift_id": gift_unique_id,
+                "stars": star_count,
+                "gift": g
+            })
+
+        for user_id, items in user_gifts_map.items():
+            total_stars = sum(it["stars"] for it in items)
+            if total_stars < SUB_STANDARD_PRICE:
+                continue
+
+            # Определяем тариф по общей сумме звёзд всех подарков пользователя
+            if total_stars >= SUB_PREMIUM_PRICE:
                 plan = "premium"
                 plan_name = "👑 Premium (100% профита)"
-            elif star_count >= SUB_PRO_PRICE:
+            elif total_stars >= SUB_PRO_PRICE:
                 plan = "pro"
                 plan_name = "💎 PRO (Инлайн + Business)"
             else:
                 plan = "standard"
                 plan_name = "⭐️ Стандарт"
 
-            gift_unique_id = getattr(g, "owned_gift_id", None) or f"gift_{user_id}_{g.send_date}_{star_count}"
-            already_used = await db.is_charge_id_used(gift_unique_id)
-            if already_used:
-                continue
+            # 1. Записываем каждый использованный подарок в базу
+            for it in items:
+                await db.record_payment(
+                    user_id=user_id,
+                    amount=it["stars"],
+                    currency="XTR",
+                    charge_id=it["gift_id"],
+                    payload=f"gift_auto_sub_{plan}"
+                )
 
-            # 1. Записываем платёж в базу
-            await db.record_payment(
-                user_id=user_id,
-                amount=star_count,
-                currency="XTR",
-                charge_id=gift_unique_id,
-                payload=f"gift_auto_sub_{plan}"
-            )
+            primary_charge = items[0]["gift_id"]
+            sender = user_senders[user_id]
 
             # 2. Активируем подписку
             new_expires_at = await db.add_or_extend_subscription(
@@ -760,18 +809,19 @@ async def check_all_incoming_star_gifts(bot: Bot):
                 first_name=sender.first_name or "User",
                 days=SUB_DURATION_DAYS,
                 plan=plan,
-                charge_id=gift_unique_id
+                charge_id=primary_charge
             )
 
             date_str = format_date_display(new_expires_at)
-            logger.info(f"Auto-activated Star Gift subscription for user {user_id}: {plan_name} ({star_count} Stars, id: {gift_unique_id})")
+            logger.info(f"Auto-activated Star Gifts subscription for user {user_id}: {plan_name} ({total_stars} Stars in {len(items)} gifts)")
 
             # 3. Уведомление пользователю
             try:
                 success_text = (
-                    "🎉 <b>Оплата подарком за Stars автоматически подтверждена!</b>\n\n"
+                    "🎉 <b>Оплата подарками за Stars автоматически подтверждена!</b>\n\n"
                     f"• Тариф: <b>{plan_name}</b>\n"
-                    f"• Получено: <b>{star_count} Stars ⭐️</b>\n"
+                    f"• Подарков зачислено: <b>{len(items)} шт.</b>\n"
+                    f"• Общая сумма: <b>{total_stars} Stars ⭐️</b>\n"
                     f"• Срок действия: до <b>{date_str}</b>\n\n"
                     "🚀 Подписка успешно активирована без ручной проверки, приятного использования!"
                 )
@@ -790,9 +840,9 @@ async def check_all_incoming_star_gifts(bot: Bot):
                 await bot.send_message(
                     chat_id=config.GIFT_RECIPIENT_ID,
                     text=(
-                        f"⚡️ <b>Автоматически зачислен подарок за Stars!</b>\n\n"
+                        f"⚡️ <b>Автоматически зачислены подарки за Stars!</b>\n\n"
                         f"• Пользователь: {username_display} (ID: <code>{user_id}</code>)\n"
-                        f"• Тариф: <b>{plan_name}</b> ({star_count} ⭐️)\n"
+                        f"• Тариф: <b>{plan_name}</b> (Сумма: {total_stars} ⭐️, {len(items)} подарков)\n"
                         f"• Подписка активирована моментально через API!"
                     ),
                     parse_mode="HTML"

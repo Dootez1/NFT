@@ -801,7 +801,10 @@ async def check_all_incoming_star_gifts(bot: Bot):
                 pass
 
     except Exception as e:
-        logger.error(f"Error in check_all_incoming_star_gifts: {e}")
+        if "user not found" in str(e):
+            logger.debug(f"check_all_incoming_star_gifts: {e}")
+        else:
+            logger.error(f"Error in check_all_incoming_star_gifts: {e}")
 
 
 async def star_gifts_background_checker(bot: Bot):

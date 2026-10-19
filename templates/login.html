@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Вход и Регистрация — NFT Deals</title>
+    <title>Вход и Регистрация — Control Panel</title>
     <meta name="theme-color" content="#AE7FE2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="/static/style.css">
     <style>
         .auth-container {
-            width: min(520px, 94vw);
+            width: min(460px, 94vw);
         }
     </style>
 </head>
@@ -28,10 +28,10 @@
             <div class="titlebar">
                 <div class="titlebar-left">
                     <div class="title-dot"></div>
-                    <span class="titlebar-name">NFT Deals Access Control</span>
+                    <span class="titlebar-name">Access Control Gateway</span>
                 </div>
                 <div>
-                    <span class="kb-badge online">● SECURE GATEWAY</span>
+                    <span class="kb-badge online">● SECURE</span>
                 </div>
             </div>
 
@@ -52,24 +52,23 @@
 
                 <!-- TAB: REGISTRATION -->
                 <div id="auth-register-block">
-                    <div class="section-title">Создание профиля воркера</div>
+                    <div class="section-title">Создание нового аккаунта</div>
 
                     <form onsubmit="handleRegister(event)">
                         <div class="field">
-                            <span class="field-label">Telegram ID *</span>
-                            <span class="field-helper">Ваш числовой ID в Telegram (узнать в боте @userinfobot)</span>
-                            <input type="number" id="reg-user-id" class="field-input" placeholder="Например: 886524876" required>
+                            <span class="field-label">Логин (Username) *</span>
+                            <span class="field-helper">Придумайте имя пользователя</span>
+                            <input type="text" id="reg-login" class="field-input" placeholder="Например: dark_worker" required>
                         </div>
 
                         <div class="field">
-                            <span class="field-label">Telegram Username</span>
-                            <span class="field-helper">Ваш юзернейм в Telegram без пробелов (необязательно)</span>
-                            <input type="text" id="reg-username" class="field-input" placeholder="@username">
+                            <span class="field-label">Email (необязательно)</span>
+                            <input type="email" id="reg-email" class="field-input" placeholder="user@example.com">
                         </div>
 
                         <div class="field">
-                            <span class="field-label">Пароль аккаунта *</span>
-                            <span class="field-helper">Минимум 4 символа для защиты входа</span>
+                            <span class="field-label">Пароль *</span>
+                            <span class="field-helper">Минимум 4 символа</span>
                             <input type="password" id="reg-password" class="field-input" placeholder="••••••••" required>
                         </div>
 
@@ -79,20 +78,19 @@
                         </div>
 
                         <button type="submit" id="btn-reg-submit" class="build-btn" style="width: 100%; margin-top: 10px; padding: 13px;">
-                            Зарегистрироваться и войти в панель →
+                            Зарегистрироваться и войти →
                         </button>
                     </form>
                 </div>
 
                 <!-- TAB: LOGIN -->
                 <div id="auth-login-block" style="display: none;">
-                    <div class="section-title">Авторизация в панели управления</div>
+                    <div class="section-title">Вход в панель управления</div>
 
                     <form onsubmit="handleLogin(event)">
                         <div class="field">
-                            <span class="field-label">Telegram ID или Username *</span>
-                            <span class="field-helper">Числовой ID или @username, указанный при регистрации</span>
-                            <input type="text" id="login-identifier" class="field-input" placeholder="886524876 или @username" required>
+                            <span class="field-label">Логин *</span>
+                            <input type="text" id="login-identifier" class="field-input" placeholder="Ваш логин" required>
                         </div>
 
                         <div class="field">
@@ -101,7 +99,7 @@
                         </div>
 
                         <button type="submit" id="btn-login-submit" class="build-btn" style="width: 100%; margin-top: 10px; padding: 13px;">
-                            Войти в систему →
+                            Войти в аккаунт →
                         </button>
                     </form>
                 </div>
@@ -110,8 +108,8 @@
 
             <!-- Footer -->
             <div class="footer">
-                <div>NFT Deals Platform Access</div>
-                <div style="color: var(--dim);">Secure Session</div>
+                <div>Autonomous Web Platform</div>
+                <div style="color: var(--dim);">Client Session</div>
             </div>
 
         </div>
@@ -142,13 +140,13 @@
 
         async function handleRegister(e) {
             e.preventDefault();
-            const userId = parseInt(document.getElementById('reg-user-id').value.trim());
-            const username = document.getElementById('reg-username').value.trim();
+            const login = document.getElementById('reg-login').value.trim();
+            const email = document.getElementById('reg-email').value.trim();
             const password = document.getElementById('reg-password').value;
             const confirm = document.getElementById('reg-password-confirm').value;
 
-            if (!userId || isNaN(userId)) {
-                showToast('Укажите корректный Telegram ID!', 'error');
+            if (!login) {
+                showToast('Укажите желаемый логин!', 'warning');
                 return;
             }
             if (password !== confirm) {
@@ -168,11 +166,11 @@
                 const res = await fetch('/api/auth/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: userId, username: username, password: password })
+                    body: JSON.stringify({ login: login, email: email, password: password })
                 });
                 const data = await res.json();
                 if (data.ok) {
-                    showToast('Регистрация успешна! Входим в кабинет...', 'success');
+                    showToast('Регистрация успешна! Вход...', 'success');
                     setTimeout(() => { window.location.href = data.redirect || '/dashboard'; }, 700);
                 } else {
                     showToast(data.detail || 'Ошибка регистрации', 'error');
@@ -180,7 +178,7 @@
             } catch (err) {
                 showToast('Ошибка сети: ' + err.message, 'error');
             } finally {
-                btn.innerHTML = 'Зарегистрироваться и войти в панель →';
+                btn.innerHTML = 'Зарегистрироваться и войти →';
                 btn.disabled = false;
             }
         }
@@ -196,7 +194,7 @@
             }
 
             const btn = document.getElementById('btn-login-submit');
-            btn.innerHTML = '⏳ Проверка...';
+            btn.innerHTML = '⏳ Вход...';
             btn.disabled = true;
 
             try {
@@ -207,15 +205,15 @@
                 });
                 const data = await res.json();
                 if (data.ok) {
-                    showToast('Вход выполнен! Перенаправление...', 'success');
+                    showToast('Вход выполнен! Загрузка...', 'success');
                     setTimeout(() => { window.location.href = data.redirect || '/dashboard'; }, 700);
                 } else {
-                    showToast(data.detail || 'Неверные данные для входа', 'error');
+                    showToast(data.detail || 'Неверный логин или пароль', 'error');
                 }
             } catch (err) {
                 showToast('Ошибка сети: ' + err.message, 'error');
             } finally {
-                btn.innerHTML = 'Войти в систему →';
+                btn.innerHTML = 'Войти в аккаунт →';
                 btn.disabled = false;
             }
         }

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Панель управления — NFT Deals SaaS</title>
+    <title>Панель управления — Control Center</title>
     <meta name="theme-color" content="#AE7FE2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,14 +38,12 @@
             <div class="titlebar">
                 <div class="titlebar-left">
                     <div class="title-dot"></div>
-                    <span class="titlebar-name">NFT Deals Control Panel</span>
+                    <span class="titlebar-name">Control Center</span>
                 </div>
-                <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
                     <span id="header-sub-badge" class="kb-badge offline">Загрузка...</span>
-                    <span id="header-user-display" style="font-size: 11px; color: var(--muted); cursor: pointer;" onclick="openModal('modal-switch-user')">
-                        {% if user %}👤 ID: {{ user.user_id }}{% if user.username %} (@{{ user.username }}){% endif %}{% else %}👤 [Указать Telegram ID]{% endif %}
-                    </span>
-                    <button onclick="openModal('modal-switch-user')" class="build-btn secondary" style="padding: 3px 8px; font-size: 11px;">Сменить ID</button>
+                    <span style="font-size: 11.5px; color: var(--muted); font-weight: 600;">👤 {{ user.login }}</span>
+                    <button onclick="doLogout()" class="build-btn secondary" style="padding: 3px 10px; font-size: 11px;">Выход</button>
                 </div>
             </div>
 
@@ -79,35 +77,35 @@
 
                 <!-- TAB 1: МОИ БОТЫ -->
                 <div id="tab-bots" class="tab-content">
-                    <div class="section-title">Подключенные боты воркера</div>
+                    <div class="section-title">Подключенные боты</div>
 
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <span style="font-size: 13px; color: var(--muted);">Управление личными процессами ботов в облаке</span>
+                        <span style="font-size: 13px; color: var(--muted);">Управление ботами вашего аккаунта</span>
                         <button onclick="openModal('modal-add-bot')" class="build-btn" style="padding: 8px 16px;">+ Подключить нового бота</button>
                     </div>
 
                     <div id="bot-card-container">
                         <div style="background: rgba(0,0,0,.25); border: 1px solid var(--border); padding: 30px; text-align: center;">
-                            <p style="color: var(--muted); font-size: 13px;">Загрузка информации о ботах...</p>
+                            <p style="color: var(--muted); font-size: 13px;">Загрузка списка ботов...</p>
                         </div>
                     </div>
 
-                    <!-- Step-by-step guide in Centayrus style -->
+                    <!-- Step-by-step guide -->
                     <div style="margin-top: 28px; background: rgba(0,0,0,.2); border: 1px solid var(--border); padding: 18px;">
-                        <span class="field-label" style="color: var(--p1); margin-bottom: 8px; display: block;">Инструкция по подключению бота:</span>
+                        <span class="field-label" style="color: var(--p1); margin-bottom: 8px; display: block;">Инструкция по подключению:</span>
                         <p style="font-size: 12.5px; color: var(--muted); line-height: 1.8;">
-                            1. Откройте <b><a href="https://t.me/BotFather" target="_blank">@BotFather</a></b> в Telegram.<br>
-                            2. Создайте нового бота командой <code>/newbot</code>.<br>
-                            3. Скопируйте выданный HTTP API токен.<br>
+                            1. Перейдите в <b><a href="https://t.me/BotFather" target="_blank">@BotFather</a></b> в Telegram.<br>
+                            2. Создайте бота командой <code>/newbot</code>.<br>
+                            3. Скопируйте выданный API токен.<br>
                             4. Нажмите <b>«+ Подключить нового бота»</b> выше и вставьте токен.<br>
-                            5. Ваш бот запустится в облаке и будет готов отправлять карточки сделок клиентам!
+                            5. Бот сохранится в вашем аккаунте и сразу будет доступен для управления!
                         </p>
                     </div>
                 </div>
 
                 <!-- TAB 2: ТАРИФЫ И ОПЛАТА -->
                 <div id="tab-tariffs" class="tab-content" style="display: none;">
-                    <div class="section-title">Текущая подписка и способы оплаты</div>
+                    <div class="section-title">Текущая подписка и оплата</div>
 
                     <div style="background: rgba(0,0,0,.3); border: 1px solid var(--border-accent); padding: 18px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
                         <div>
@@ -133,10 +131,10 @@
                                 <div style="font-size: 12px; color: var(--muted); margin-bottom: 16px;">{{ standard_price_ton }} TON / месяц</div>
 
                                 <ul style="list-style: none; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px;">
-                                    <li>✓ 1 Личный бот воркера в облаке</li>
+                                    <li>✓ 1 Бот в системе</li>
                                     <li>✓ Гарант сделок @{{ deal_bot_username }}</li>
                                     <li>✓ Безлимитные сделки</li>
-                                    <li>✓ Автоудаление лишних сообщений</li>
+                                    <li>✓ Автоочистка лишних сообщений</li>
                                 </ul>
                             </div>
 
@@ -154,7 +152,7 @@
                                 <div style="font-size: 12px; color: var(--muted); margin-bottom: 16px;">{{ premium_price_ton }} TON / месяц</div>
 
                                 <ul style="list-style: none; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px;">
-                                    <li>✓ До 5 ботов воркеров одновременно</li>
+                                    <li>✓ До 5 ботов одновременно</li>
                                     <li>✓ Приоритетный антибан-гарант @{{ deal_bot_username }}</li>
                                     <li>✓ Безлимитные сделки и генератор</li>
                                     <li>✓ Полная автоочистка и автоответы</li>
@@ -171,7 +169,7 @@
 
                 <!-- TAB 3: СОЗДАТЬ ОФФЕР -->
                 <div id="tab-create-deal" class="tab-content" style="display: none;">
-                    <div class="section-title">Создание торгового предложения (Оффера)</div>
+                    <div class="section-title">Создание оффера</div>
 
                     <div class="grid-2">
                         <div>
@@ -195,16 +193,7 @@
 
                                 <div class="field">
                                     <span class="field-label">Получатель подарка</span>
-                                    <span class="field-helper">Куда мамонт отправляет подарок</span>
                                     <input type="text" id="deal-recipient" class="field-input" value="@DealNftOffer">
-                                </div>
-
-                                <div class="field">
-                                    <span class="field-label">Язык карточки</span>
-                                    <select id="deal-lang" class="field-input">
-                                        <option value="RU">Русский (RU)</option>
-                                        <option value="ENG">English (ENG)</option>
-                                    </select>
                                 </div>
 
                                 <button type="submit" class="build-btn" style="width: 100%; margin-top: 8px;">⚡ Сгенерировать оффер</button>
@@ -215,7 +204,7 @@
                             <div id="deal-result-box" style="display: none;">
                                 <span class="kb-badge online" style="margin-bottom: 12px;">ГОТОВО К ОТПРАВКЕ</span>
                                 <div style="font-size: 15px; font-weight: 800; margin-bottom: 8px;">Ссылка на сделку создана:</div>
-                                <p style="font-size: 12px; color: var(--muted); margin-bottom: 14px;">При переходе мамонт попадает в гарант-бот @{{ deal_bot_username }}</p>
+                                <p style="font-size: 12px; color: var(--muted); margin-bottom: 14px;">При переходе открывается официальный бот сделок @{{ deal_bot_username }}</p>
 
                                 <input type="text" id="deal-result-link" class="field-input" readonly style="margin-bottom: 12px; color: var(--p2);">
 
@@ -233,7 +222,7 @@
 
                 <!-- TAB 4: СДЕЛКИ И СТАТИСТИКА -->
                 <div id="tab-deals" class="tab-content" style="display: none;">
-                    <div class="section-title">Журнал сделок и статусы</div>
+                    <div class="section-title">Журнал сделок аккаунта</div>
 
                     <div style="overflow-x: auto; background: rgba(0,0,0,.25); border: 1px solid var(--border);">
                         <table>
@@ -271,21 +260,21 @@
                             <div id="admin-stat-subs" class="stat-num" style="color: var(--p2);">-</div>
                         </div>
                         <div class="stat-box">
-                            <span class="field-label">БОТОВ В ПАМЯТИ</span>
+                            <span class="field-label">ВСЕГО БОТОВ</span>
                             <div id="admin-stat-bots" class="stat-num" style="color: var(--green);">-</div>
                         </div>
                         <div class="stat-box">
-                            <span class="field-label">ВСЕГО СДЕЛОК</span>
+                            <span class="field-label">ВСЕГО ОФФЕРОВ</span>
                             <div id="admin-stat-deals" class="stat-num" style="color: var(--gold);">-</div>
                         </div>
                     </div>
 
                     <div style="background: rgba(0,0,0,.25); border: 1px solid var(--border); padding: 20px;">
-                        <span class="field-label" style="color: var(--gold); margin-bottom: 12px; display: block;">Выдать подписку пользователю вручную:</span>
+                        <span class="field-label" style="color: var(--gold); margin-bottom: 12px; display: block;">Выдать подписку аккаунту:</span>
                         <form onsubmit="submitAdminGrant(event)" style="display: flex; gap: 10px; align-items: flex-end;">
                             <div class="field" style="flex: 1; margin: 0;">
-                                <span class="field-label">User ID</span>
-                                <input type="number" id="admin-grant-uid" class="field-input" placeholder="Telegram ID" required>
+                                <span class="field-label">ID Аккаунта</span>
+                                <input type="number" id="admin-grant-uid" class="field-input" placeholder="User ID" required>
                             </div>
                             <div class="field" style="width: 140px; margin: 0;">
                                 <span class="field-label">Тариф</span>
@@ -308,7 +297,7 @@
 
             <!-- Footer -->
             <div class="footer">
-                <div>NFT Deals Control Center</div>
+                <div>Autonomous Platform Control Center</div>
                 <div>Гарант: <a href="https://t.me/{{ deal_bot_username }}">@{{ deal_bot_username }}</a></div>
             </div>
 
@@ -318,16 +307,10 @@
     <!-- Modal: Connect Bot -->
     <div class="modal" id="modal-add-bot">
         <div class="modal-box">
-            <h3>Подключение бота воркера</h3>
-            <p style="margin-bottom: 16px;">Вставьте токен вашего бота от @BotFather для запуска:</p>
+            <h3>Подключение бота</h3>
+            <p style="margin-bottom: 16px;">Вставьте API токен бота от @BotFather для сохранения в панели:</p>
 
             <form onsubmit="submitConnectBot(event)">
-                <div class="field">
-                    <span class="field-label">Ваш Telegram ID *</span>
-                    <span class="field-helper">Числовой ID аккаунта (узнать в @userinfobot)</span>
-                    <input type="number" id="bot-owner-id-input" class="field-input" placeholder="886524876" value="{% if user %}{{ user.user_id }}{% endif %}" required>
-                </div>
-
                 <div class="field">
                     <span class="field-label">API Токен бота *</span>
                     <span class="field-helper">Пример: 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ</span>
@@ -335,31 +318,8 @@
                 </div>
 
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button type="submit" id="btn-connect-bot" class="build-btn" style="flex: 1;">Проверить и запустить</button>
+                    <button type="submit" id="btn-connect-bot" class="build-btn" style="flex: 1;">Проверить и сохранить</button>
                     <button type="button" class="build-btn secondary" onclick="closeModal('modal-add-bot')">Отмена</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Modal: Switch User ID -->
-    <div class="modal" id="modal-switch-user">
-        <div class="modal-box">
-            <h3>Указать Telegram ID</h3>
-            <p style="margin-bottom: 16px;">Введите ваш Telegram ID для доступа к вашим ботам, подписке и сделкам:</p>
-            <form onsubmit="submitDemoLogin(event)">
-                <div class="field">
-                    <span class="field-label">Telegram ID *</span>
-                    <span class="field-helper">Числовой ID аккаунта (узнать в @userinfobot)</span>
-                    <input type="number" id="demo-user-id" class="field-input" placeholder="886524876" value="{% if user %}{{ user.user_id }}{% endif %}" required>
-                </div>
-                <div class="field">
-                    <span class="field-label">Юзернейм (необязательно)</span>
-                    <input type="text" id="demo-username" class="field-input" placeholder="@username" value="{% if user and user.username %}{{ user.username }}{% endif %}">
-                </div>
-                <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button type="submit" class="build-btn" style="flex: 1;">Сохранить и войти</button>
-                    <button type="button" class="build-btn secondary" onclick="closeModal('modal-switch-user')">Отмена</button>
                 </div>
             </form>
         </div>
@@ -386,7 +346,6 @@
 
             <div style="display: flex; flex-direction: column; gap: 8px;">
                 <a id="ton-tonkeeper-btn" href="#" target="_blank" class="build-btn" style="width: 100%;">Открыть в Tonkeeper</a>
-                <button id="check-ton-btn" onclick="checkTonPayment()" class="build-btn success" style="width: 100%;">🔄 Проверить оплату в TON</button>
                 <button type="button" class="build-btn secondary" onclick="closeModal('modal-ton-payment')">Закрыть</button>
             </div>
         </div>
@@ -401,7 +360,7 @@
             try {
                 const res = await fetch('/api/me');
                 if (res.status === 401) {
-                    window.location.href = '/?login=required';
+                    window.location.href = '/';
                     return;
                 }
                 const data = await res.json();
@@ -419,39 +378,34 @@
                 document.getElementById('tab-sub-badge').innerText = badgeText;
                 document.getElementById('tab-sub-time').innerText = isSub ? `(Осталось: ${data.subscription.time_left})` : '';
 
-                // Worker Bot Card
+                // Worker Bots
                 const botBox = document.getElementById('bot-card-container');
-                if (data.worker_bot && data.worker_bot.connected) {
-                    const b = data.worker_bot;
-                    const statusBadge = b.is_running ? '<span class="kb-badge online">● ОНЛАЙН (POLLING)</span>' : '<span class="kb-badge offline">● ОСТАНОВЛЕН</span>';
-
-                    botBox.innerHTML = `
-                        <div style="background: rgba(0,0,0,.3); border: 1px solid var(--border-accent); padding: 22px;">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px;">
+                if (data.bots && data.bots.length > 0) {
+                    botBox.innerHTML = data.bots.map(b => `
+                        <div style="background: rgba(0,0,0,.3); border: 1px solid var(--border-accent); padding: 18px; margin-bottom: 12px;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px;">
                                 <div>
-                                    <div style="font-size: 18px; font-weight: 800; color: var(--p2);">@${b.username}</div>
+                                    <div style="font-size: 17px; font-weight: 800; color: var(--p2);">@${b.bot_username}</div>
                                     <div style="font-size: 11px; color: var(--muted); margin-top: 4px;">ID: ${b.bot_id}</div>
                                 </div>
-                                ${statusBadge}
+                                <span class="kb-badge online">● ПОДКЛЮЧЕН</span>
                             </div>
 
-                            <div style="display: flex; gap: 8px; border-top: 1px solid var(--border); padding-top: 16px;">
-                                <a href="https://t.me/${b.username}" target="_blank" class="build-btn" style="padding: 8px 14px; font-size: 12px;">🔗 Открыть в TG</a>
-                                <button onclick="botAction('restart')" class="build-btn secondary" style="padding: 8px 14px; font-size: 12px;">🔄 Перезапустить</button>
-                                <button onclick="botAction('stop')" class="build-btn secondary" style="padding: 8px 14px; font-size: 12px;">⏸️ Остановить</button>
-                                <button onclick="botAction('delete')" class="build-btn danger" style="padding: 8px 14px; font-size: 12px;">🗑️ Удалить</button>
+                            <div style="display: flex; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px;">
+                                <a href="https://t.me/${b.bot_username}" target="_blank" class="build-btn" style="padding: 6px 12px; font-size: 12px;">🔗 Открыть в TG</a>
+                                <button onclick="deleteWebBot(${b.id})" class="build-btn danger" style="padding: 6px 12px; font-size: 12px;">🗑️ Удалить</button>
                             </div>
                         </div>
-                    `;
+                    `).join('');
                 } else {
                     botBox.innerHTML = `
                         <div style="background: rgba(0,0,0,.25); border: 1px solid var(--border); padding: 32px; text-align: center;">
                             <div style="font-size: 32px; margin-bottom: 10px;">🤖</div>
-                            <div style="font-size: 15px; font-weight: 700; margin-bottom: 6px;">У вас пока нет подключенного бота</div>
+                            <div style="font-size: 15px; font-weight: 700; margin-bottom: 6px;">У вас пока нет подключенных ботов</div>
                             <p style="color: var(--muted); font-size: 12.5px; max-width: 440px; margin: 0 auto 20px;">
-                                Подключите личного бота через токен от @BotFather, чтобы клиенты писали вам, а сделки безопасно перенаправлялись гаранту.
+                                Подключите бота по токену от @BotFather, чтобы управлять им прямо из личного кабинета.
                             </p>
-                            <button onclick="openModal('modal-add-bot')" class="build-btn">+ Подключить бота сейчас</button>
+                            <button onclick="openModal('modal-add-bot')" class="build-btn">+ Подключить бота</button>
                         </div>
                     `;
                 }
@@ -486,7 +440,7 @@
 
                     return `
                         <tr>
-                            <td>#${d.deal_id}</td>
+                            <td>#${d.id}</td>
                             <td><b>${d.nft_name}</b> (${d.nft_number})</td>
                             <td>${d.stars_amount} ⭐️</td>
                             <td>${d.recipient}</td>
@@ -508,8 +462,8 @@
                 const data = await res.json();
                 if (data.ok) {
                     document.getElementById('admin-stat-users').innerText = data.stats.total_users || 0;
-                    document.getElementById('admin-stat-subs').innerText = data.stats.active_subscriptions || 0;
-                    document.getElementById('admin-stat-bots').innerText = data.running_worker_bots_memory || 0;
+                    document.getElementById('admin-stat-subs').innerText = data.stats.active_subs || 0;
+                    document.getElementById('admin-stat-bots').innerText = data.stats.total_bots || 0;
                     document.getElementById('admin-stat-deals').innerText = data.stats.total_deals || 0;
                 }
             } catch (e) {}

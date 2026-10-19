@@ -98,60 +98,61 @@ async function submitDemoLogin(e) {
 async function submitConnectBot(e) {
     if (e) e.preventDefault();
     const tokenInput = document.getElementById('bot-token-input');
-    const token = tokenInput.value.trim();
+    const token = tokenInput ? tokenInput.value.trim() : '';
     if (!token) {
         showToast('Введите токен бота от @BotFather!', 'warning');
         return;
     }
 
-    const ownerIdInput = document.getElementById('bot-owner-id-input');
-    const ownerId = ownerIdInput && ownerIdInput.value.trim() ? parseInt(ownerIdInput.value.trim()) : null;
-
     const btn = document.getElementById('btn-connect-bot');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '⏳ Проверка и запуск...';
-    btn.disabled = true;
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.innerHTML = '⏳ Проверка и сохранение...';
+        btn.disabled = true;
+    }
 
     try {
         const res = await fetch('/api/bots/connect', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: token, user_id: ownerId })
+            body: JSON.stringify({ token: token })
         });
         const data = await res.json();
         if (data.ok) {
             showToast(data.message, 'success');
             closeModal('modal-add-bot');
-            setTimeout(() => window.location.reload(), 1200);
+            setTimeout(() => window.location.reload(), 1000);
         } else {
             showToast(data.detail || 'Не удалось подключить бота', 'error');
         }
     } catch (err) {
         showToast('Ошибка соединения: ' + err.message, 'error');
     } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
     }
 }
 
-// Worker Bot Actions (restart, stop, delete)
-async function botAction(action) {
-    if (action === 'delete' && !confirm('Вы уверены, что хотите удалить этого бота из системы?')) {
+// Delete Web Bot
+async function deleteWebBot(botId) {
+    if (!confirm('Вы действительно хотите удалить этого бота из панели?')) {
         return;
     }
 
     try {
-        const res = await fetch('/api/bots/action', {
+        const res = await fetch('/api/bots/delete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: action })
+            body: JSON.stringify({ bot_id: botId })
         });
         const data = await res.json();
         if (data.ok) {
             showToast(data.message, 'success');
-            setTimeout(() => window.location.reload(), 1000);
+            setTimeout(() => window.location.reload(), 800);
         } else {
-            showToast(data.detail || 'Действие отклонено', 'error');
+            showToast(data.detail || 'Ошибка удаления бота', 'error');
         }
     } catch (err) {
         showToast('Ошибка: ' + err.message, 'error');

@@ -54,5 +54,11 @@ else:
 # Default placeholder image if NFT preview fails to load
 DEFAULT_NFT_IMAGE = "https://telegram.org/file/464001097/1/mQyB5gqI7aY.100078/eb0f5aa1a5c60aa582"
 
+# Web Server settings
+WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0").strip()
+WEB_PORT = int(os.getenv("PORT", os.getenv("WEB_PORT", "8080")))
+JWT_SECRET = os.getenv("JWT_SECRET", "jwt-secret-key-nft-offer-2026").strip()
+CRYPTO_BOT_TOKEN = os.getenv("CRYPTO_BOT_TOKEN", "").strip()
+
 # In-memory registry of last rendered timer strings to throttle updates
 DEAL_LAST_TIMERS: dict[int, str] = {}

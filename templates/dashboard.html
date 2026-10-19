@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Панель управления — NFT Deals SaaS</title>
+    <meta name="theme-color" content="#AE7FE2">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+        .stat-box {
+            background: rgba(0,0,0,.3);
+            border: 1px solid var(--border);
+            padding: 16px;
+        }
+        .stat-num {
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--p2);
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="blob b1"></div>
+    <div class="blob b2"></div>
+    <div class="blob b3"></div>
+
+    <div class="app-wrapper">
+        <div class="app">
+
+            <!-- Titlebar -->
+            <div class="titlebar">
+                <div class="titlebar-left">
+                    <div class="title-dot"></div>
+                    <span class="titlebar-name">NFT Deals Control Panel</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span id="header-sub-badge" class="kb-badge offline">Загрузка...</span>
+                    <span style="font-size: 11px; color: var(--muted);">ID: {{ user.user_id }}</span>
+                    <button onclick="doLogout()" class="build-btn secondary" style="padding: 4px 10px; font-size: 11px;">Выход</button>
+                </div>
+            </div>
+
+            <!-- Menustrip -->
+            <div class="menustrip">
+                <div id="nav-bots" class="menu-item active" onclick="switchTab('bots')">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h5v5H2zm7 0h5v5H9zm-7 7h5v5H2zm7 7h5v5H9z" opacity=".9"/></svg>
+                    Мои боты
+                </div>
+                <div id="nav-tariffs" class="menu-item" onclick="switchTab('tariffs')">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 1h8l3 3v10H1V4L4 1zm0 1.5L2 5v8h12V5l-2-2.5H4zm2 5h4v1H6V7.5zm0 2.5h4v1H6V10z" opacity=".9"/></svg>
+                    Тарифы и Оплата
+                </div>
+                <div id="nav-create-deal" class="menu-item" onclick="switchTab('create-deal')">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 2a5 5 0 1 1 0 10A5 5 0 0 1 8 3zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" opacity=".9"/></svg>
+                    Создать оффер
+                </div>
+                <div id="nav-deals" class="menu-item" onclick="switchTab('deals')">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3 3h10v2H3zm0 4h10v2H3zm0 4h6v2H3z" opacity=".9"/></svg>
+                    Сделки и Статистика
+                </div>
+                {% if is_admin %}
+                <div id="nav-admin" class="menu-item" onclick="switchTab('admin')" style="color: var(--gold); margin-left: auto;">
+                    👑 Админ-центр
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Content Area -->
+            <div class="content">
+
+                <!-- TAB 1: МОИ БОТЫ -->
+                <div id="tab-bots" class="tab-content">
+                    <div class="section-title">Подключенные боты воркера</div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <span style="font-size: 13px; color: var(--muted);">Управление личными процессами ботов в облаке</span>
+                        <button onclick="openModal('modal-add-bot')" class="build-btn" style="padding: 8px 16px;">+ Подключить нового бота</button>
+                    </div>
+
+                    <div id="bot-card-container">
+                        <div style="background: rgba(0,0,0,.25); border: 1px solid var(--border); padding: 30px; text-align: center;">
+                            <p style="color: var(--muted); font-size: 13px;">Загрузка информации о ботах...</p>
+                        </div>
+                    </div>
+
+                    <!-- Step-by-step guide in Centayrus style -->
+                    <div style="margin-top: 28px; background: rgba(0,0,0,.2); border: 1px solid var(--border); padding: 18px;">
+                        <span class="field-label" style="color: var(--p1); margin-bottom: 8px; display: block;">Инструкция по подключению бота:</span>
+                        <p style="font-size: 12.5px; color: var(--muted); line-height: 1.8;">
+                            1. Откройте <b><a href="https://t.me/BotFather" target="_blank">@BotFather</a></b> в Telegram.<br>
+                            2. Создайте нового бота командой <code>/newbot</code>.<br>
+                            3. Скопируйте выданный HTTP API токен.<br>
+                            4. Нажмите <b>«+ Подключить нового бота»</b> выше и вставьте токен.<br>
+                            5. Ваш бот запустится в облаке и будет готов отправлять карточки сделок клиентам!
+                        </p>
+                    </div>
+                </div>
+
+                <!-- TAB 2: ТАРИФЫ И ОПЛАТА -->
+                <div id="tab-tariffs" class="tab-content" style="display: none;">
+                    <div class="section-title">Текущая подписка и способы оплаты</div>
+
+                    <div style="background: rgba(0,0,0,.3); border: 1px solid var(--border-accent); padding: 18px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span class="field-label">Ваш текущий тариф:</span>
+                            <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                                <span id="tab-sub-badge" class="kb-badge offline">Проверка...</span>
+                                <span id="tab-sub-time" style="font-size: 13px; font-weight: 700; color: var(--text);"></span>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="promo-code-input" class="field-input" placeholder="Промокод" style="width: 140px; padding: 7px 10px;">
+                            <button onclick="submitPromoCode(event)" class="build-btn secondary" style="padding: 7px 14px;">Применить</button>
+                        </div>
+                    </div>
+
+                    <div class="grid-2">
+                        <!-- Standard -->
+                        <div style="background: rgba(0,0,0,.25); border: 1px solid var(--border-accent); padding: 22px; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <span class="kb-badge">STANDARD PLAN</span>
+                                <div style="font-size: 26px; font-weight: 800; margin: 10px 0 4px;">{{ standard_price_stars }} ⭐️</div>
+                                <div style="font-size: 12px; color: var(--muted); margin-bottom: 16px;">{{ standard_price_ton }} TON / месяц</div>
+
+                                <ul style="list-style: none; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px;">
+                                    <li>✓ 1 Личный бот воркера в облаке</li>
+                                    <li>✓ Гарант сделок @{{ deal_bot_username }}</li>
+                                    <li>✓ Безлимитные сделки</li>
+                                    <li>✓ Автоудаление лишних сообщений</li>
+                                </ul>
+                            </div>
+
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <button onclick="selectPlanPayment('standard', 'cryptobot')" class="build-btn" style="width: 100%;">Оплатить через @CryptoBot</button>
+                                <button onclick="selectPlanPayment('standard', 'ton')" class="build-btn secondary" style="width: 100%;">Оплатить переводом TON</button>
+                            </div>
+                        </div>
+
+                        <!-- Premium -->
+                        <div style="background: rgba(0,0,0,.25); border: 1px solid rgba(251,191,36,.36); padding: 22px; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <span class="kb-badge gold">PREMIUM VIP</span>
+                                <div style="font-size: 26px; font-weight: 800; color: var(--gold); margin: 10px 0 4px;">{{ premium_price_stars }} ⭐️</div>
+                                <div style="font-size: 12px; color: var(--muted); margin-bottom: 16px;">{{ premium_price_ton }} TON / месяц</div>
+
+                                <ul style="list-style: none; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px;">
+                                    <li>✓ До 5 ботов воркеров одновременно</li>
+                                    <li>✓ Приоритетный антибан-гарант @{{ deal_bot_username }}</li>
+                                    <li>✓ Безлимитные сделки и генератор</li>
+                                    <li>✓ Полная автоочистка и автоответы</li>
+                                </ul>
+                            </div>
+
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <button onclick="selectPlanPayment('premium', 'cryptobot')" class="build-btn" style="width: 100%; background: linear-gradient(135deg, rgba(251,191,36,.28), rgba(213,157,255,.20)); border-color: rgba(251,191,36,.4);">Оплатить через @CryptoBot</button>
+                                <button onclick="selectPlanPayment('premium', 'ton')" class="build-btn secondary" style="width: 100%;">Оплатить переводом TON</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: СОЗДАТЬ ОФФЕР -->
+                <div id="tab-create-deal" class="tab-content" style="display: none;">
+                    <div class="section-title">Создание торгового предложения (Оффера)</div>
+
+                    <div class="grid-2">
+                        <div>
+                            <form onsubmit="submitCreateDeal(event)">
+                                <div class="field">
+                                    <span class="field-label">Название NFT / Подарка *</span>
+                                    <span class="field-helper">Например: Durov's Cap</span>
+                                    <input type="text" id="deal-nft-name" class="field-input" placeholder="Durov's Cap" required>
+                                </div>
+
+                                <div style="display: flex; gap: 12px;">
+                                    <div class="field" style="flex: 1;">
+                                        <span class="field-label">Номер / ID *</span>
+                                        <input type="text" id="deal-nft-number" class="field-input" placeholder="#1337" required>
+                                    </div>
+                                    <div class="field" style="flex: 1;">
+                                        <span class="field-label">Сумма в Stars ⭐️ *</span>
+                                        <input type="number" id="deal-stars" class="field-input" placeholder="1000" min="1" required>
+                                    </div>
+                                </div>
+
+                                <div class="field">
+                                    <span class="field-label">Получатель подарка</span>
+                                    <span class="field-helper">Куда мамонт отправляет подарок</span>
+                                    <input type="text" id="deal-recipient" class="field-input" value="@DealNftOffer">
+                                </div>
+
+                                <div class="field">
+                                    <span class="field-label">Язык карточки</span>
+                                    <select id="deal-lang" class="field-input">
+                                        <option value="RU">Русский (RU)</option>
+                                        <option value="ENG">English (ENG)</option>
+                                    </select>
+                                </div>
+
+                                <button type="submit" class="build-btn" style="width: 100%; margin-top: 8px;">⚡ Сгенерировать оффер</button>
+                            </form>
+                        </div>
+
+                        <div style="background: rgba(0,0,0,.25); border: 1px solid var(--border); padding: 24px; display: flex; flex-direction: column; justify-content: center;">
+                            <div id="deal-result-box" style="display: none;">
+                                <span class="kb-badge online" style="margin-bottom: 12px;">ГОТОВО К ОТПРАВКЕ</span>
+                                <div style="font-size: 15px; font-weight: 800; margin-bottom: 8px;">Ссылка на сделку создана:</div>
+                                <p style="font-size: 12px; color: var(--muted); margin-bottom: 14px;">При переходе мамонт попадает в гарант-бот @{{ deal_bot_username }}</p>
+
+                                <input type="text" id="deal-result-link" class="field-input" readonly style="margin-bottom: 12px; color: var(--p2);">
+
+                                <button onclick="copyText(document.getElementById('deal-result-link').value)" class="build-btn success" style="width: 100%;">
+                                    📋 Скопировать ссылку
+                                </button>
+                            </div>
+
+                            <div id="deal-placeholder-box" style="text-align: center; color: var(--muted); font-size: 13px;">
+                                Заполните параметры слева для генерации ссылки на сделку.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 4: СДЕЛКИ И СТАТИСТИКА -->
+                <div id="tab-deals" class="tab-content" style="display: none;">
+                    <div class="section-title">Журнал сделок и статусы</div>
+
+                    <div style="overflow-x: auto; background: rgba(0,0,0,.25); border: 1px solid var(--border);">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Предмет</th>
+                                    <th>Сумма</th>
+                                    <th>Получатель</th>
+                                    <th>Статус</th>
+                                    <th>Действие</th>
+                                </tr>
+                            </thead>
+                            <tbody id="deals-table-body">
+                                <tr>
+                                    <td colspan="6" style="text-align: center; color: var(--muted); padding: 24px;">Загрузка истории...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB 5: АДМИН-ЦЕНТР -->
+                {% if is_admin %}
+                <div id="tab-admin" class="tab-content" style="display: none;">
+                    <div class="section-title" style="color: var(--gold);">Административный центр платформы</div>
+
+                    <div class="grid-4" style="margin-bottom: 24px;">
+                        <div class="stat-box">
+                            <span class="field-label">ВСЕГО ПОЛЬЗОВАТЕЛЕЙ</span>
+                            <div id="admin-stat-users" class="stat-num">-</div>
+                        </div>
+                        <div class="stat-box">
+                            <span class="field-label">АКТИВНЫХ ПОДПИСОК</span>
+                            <div id="admin-stat-subs" class="stat-num" style="color: var(--p2);">-</div>
+                        </div>
+                        <div class="stat-box">
+                            <span class="field-label">БОТОВ В ПАМЯТИ</span>
+                            <div id="admin-stat-bots" class="stat-num" style="color: var(--green);">-</div>
+                        </div>
+                        <div class="stat-box">
+                            <span class="field-label">ВСЕГО СДЕЛОК</span>
+                            <div id="admin-stat-deals" class="stat-num" style="color: var(--gold);">-</div>
+                        </div>
+                    </div>
+
+                    <div style="background: rgba(0,0,0,.25); border: 1px solid var(--border); padding: 20px;">
+                        <span class="field-label" style="color: var(--gold); margin-bottom: 12px; display: block;">Выдать подписку пользователю вручную:</span>
+                        <form onsubmit="submitAdminGrant(event)" style="display: flex; gap: 10px; align-items: flex-end;">
+                            <div class="field" style="flex: 1; margin: 0;">
+                                <span class="field-label">User ID</span>
+                                <input type="number" id="admin-grant-uid" class="field-input" placeholder="Telegram ID" required>
+                            </div>
+                            <div class="field" style="width: 140px; margin: 0;">
+                                <span class="field-label">Тариф</span>
+                                <select id="admin-grant-plan" class="field-input">
+                                    <option value="standard">Standard</option>
+                                    <option value="premium">Premium</option>
+                                </select>
+                            </div>
+                            <div class="field" style="width: 100px; margin: 0;">
+                                <span class="field-label">Дней</span>
+                                <input type="number" id="admin-grant-days" class="field-input" value="30" required>
+                            </div>
+                            <button type="submit" class="build-btn" style="padding: 10px 18px;">Выдать</button>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+
+            </div>
+
+            <!-- Footer -->
+            <div class="footer">
+                <div>NFT Deals Control Center</div>
+                <div>Гарант: <a href="https://t.me/{{ deal_bot_username }}">@{{ deal_bot_username }}</a></div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Modal: Connect Bot -->
+    <div class="modal" id="modal-add-bot">
+        <div class="modal-box">
+            <h3>Подключение бота воркера</h3>
+            <p style="margin-bottom: 16px;">Вставьте API токен бота от @BotFather для запуска:</p>
+
+            <form onsubmit="submitConnectBot(event)">
+                <div class="field">
+                    <span class="field-label">API Токен бота *</span>
+                    <span class="field-helper">Пример: 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ</span>
+                    <input type="text" id="bot-token-input" class="field-input" placeholder="123456789:ABC..." required>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" id="btn-connect-bot" class="build-btn" style="flex: 1;">Проверить и запустить</button>
+                    <button type="button" class="build-btn secondary" onclick="closeModal('modal-add-bot')">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: TON Payment -->
+    <div class="modal" id="modal-ton-payment">
+        <div class="modal-box">
+            <h3>Оплата через блокчейн TON</h3>
+            <div style="background: rgba(0,0,0,.35); padding: 14px; border: 1px solid var(--border); margin: 14px 0;">
+                <div style="font-size: 11px; color: var(--muted);">СУММА ПЕРЕВОДА:</div>
+                <div id="ton-pay-amount" style="font-size: 22px; font-weight: 800; color: var(--p2); margin-bottom: 10px;">-</div>
+
+                <div style="font-size: 11px; color: var(--muted);">АДРЕС КОШЕЛЬКА:</div>
+                <div id="ton-pay-address" style="font-family: monospace; font-size: 11px; word-break: break-all; margin-bottom: 10px;">-</div>
+
+                <div style="font-size: 11px; color: var(--muted);">ОБЯЗАТЕЛЬНЫЙ КОММЕНТАРИЙ (MEMO):</div>
+                <div id="ton-pay-comment" style="font-family: monospace; font-size: 13px; font-weight: bold; color: var(--gold); word-break: break-all;">-</div>
+            </div>
+
+            <p style="font-size: 11.5px; color: var(--muted); margin-bottom: 16px;">
+                ⚠️ <b>Внимание:</b> Перевод без комментария не сможет быть зачислен автоматически.
+            </p>
+
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <a id="ton-tonkeeper-btn" href="#" target="_blank" class="build-btn" style="width: 100%;">Открыть в Tonkeeper</a>
+                <button id="check-ton-btn" onclick="checkTonPayment()" class="build-btn success" style="width: 100%;">🔄 Проверить оплату в TON</button>
+                <button type="button" class="build-btn secondary" onclick="closeModal('modal-ton-payment')">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">Уведомление</div>
+
+    <script src="/static/app.js"></script>
+    <script>
+        // Init Dashboard on page load
+        async function loadDashboardData() {
+            try {
+                const res = await fetch('/api/me');
+                if (res.status === 401) {
+                    window.location.href = '/?login=required';
+                    return;
+                }
+                const data = await res.json();
+                if (!data.ok) return;
+
+                // Subscription Badge
+                const isSub = data.subscription.is_active;
+                const planName = (data.subscription.plan || 'none').toUpperCase();
+                const badgeClass = isSub ? (planName === 'PREMIUM' ? 'kb-badge gold' : 'kb-badge online') : 'kb-badge offline';
+                const badgeText = isSub ? `ТАРИФ: ${planName}` : 'НЕ АКТИВНА';
+
+                document.getElementById('header-sub-badge').className = badgeClass;
+                document.getElementById('header-sub-badge').innerText = badgeText;
+                document.getElementById('tab-sub-badge').className = badgeClass;
+                document.getElementById('tab-sub-badge').innerText = badgeText;
+                document.getElementById('tab-sub-time').innerText = isSub ? `(Осталось: ${data.subscription.time_left})` : '';
+
+                // Worker Bot Card
+                const botBox = document.getElementById('bot-card-container');
+                if (data.worker_bot && data.worker_bot.connected) {
+                    const b = data.worker_bot;
+                    const statusBadge = b.is_running ? '<span class="kb-badge online">● ОНЛАЙН (POLLING)</span>' : '<span class="kb-badge offline">● ОСТАНОВЛЕН</span>';
+
+                    botBox.innerHTML = `
+                        <div style="background: rgba(0,0,0,.3); border: 1px solid var(--border-accent); padding: 22px;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px;">
+                                <div>
+                                    <div style="font-size: 18px; font-weight: 800; color: var(--p2);">@${b.username}</div>
+                                    <div style="font-size: 11px; color: var(--muted); margin-top: 4px;">ID: ${b.bot_id}</div>
+                                </div>
+                                ${statusBadge}
+                            </div>
+
+                            <div style="display: flex; gap: 8px; border-top: 1px solid var(--border); padding-top: 16px;">
+                                <a href="https://t.me/${b.username}" target="_blank" class="build-btn" style="padding: 8px 14px; font-size: 12px;">🔗 Открыть в TG</a>
+                                <button onclick="botAction('restart')" class="build-btn secondary" style="padding: 8px 14px; font-size: 12px;">🔄 Перезапустить</button>
+                                <button onclick="botAction('stop')" class="build-btn secondary" style="padding: 8px 14px; font-size: 12px;">⏸️ Остановить</button>
+                                <button onclick="botAction('delete')" class="build-btn danger" style="padding: 8px 14px; font-size: 12px;">🗑️ Удалить</button>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    botBox.innerHTML = `
+                        <div style="background: rgba(0,0,0,.25); border: 1px solid var(--border); padding: 32px; text-align: center;">
+                            <div style="font-size: 32px; margin-bottom: 10px;">🤖</div>
+                            <div style="font-size: 15px; font-weight: 700; margin-bottom: 6px;">У вас пока нет подключенного бота</div>
+                            <p style="color: var(--muted); font-size: 12.5px; max-width: 440px; margin: 0 auto 20px;">
+                                Подключите личного бота через токен от @BotFather, чтобы клиенты писали вам, а сделки безопасно перенаправлялись гаранту.
+                            </p>
+                            <button onclick="openModal('modal-add-bot')" class="build-btn">+ Подключить бота сейчас</button>
+                        </div>
+                    `;
+                }
+
+                // Load Deals
+                loadDealsHistory();
+
+                // Load Admin Stats if admin
+                if (data.user.is_admin) {
+                    loadAdminStats();
+                }
+
+            } catch (err) {
+                console.error("Dashboard init error:", err);
+            }
+        }
+
+        async function loadDealsHistory() {
+            try {
+                const res = await fetch('/api/deals');
+                const data = await res.json();
+                const tbody = document.getElementById('deals-table-body');
+                if (!data.ok || !data.deals || data.deals.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--muted); padding: 24px;">У вас пока нет созданных сделок</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.deals.map(d => {
+                    let badge = '<span class="kb-badge offline">ОЖИДАЕТ</span>';
+                    if (d.status === 'ACCEPTED') badge = '<span class="kb-badge">ПРИНЯТО</span>';
+                    if (d.status === 'SENT' || d.status === 'COMPLETED') badge = '<span class="kb-badge online">ОТПРАВЛЕНО</span>';
+
+                    return `
+                        <tr>
+                            <td>#${d.deal_id}</td>
+                            <td><b>${d.nft_name}</b> (${d.nft_number})</td>
+                            <td>${d.stars_amount} ⭐️</td>
+                            <td>${d.recipient}</td>
+                            <td>${badge}</td>
+                            <td>
+                                <button onclick="copyText('${d.deal_link}')" class="build-btn secondary" style="padding: 4px 8px; font-size: 11px;">📋 Копировать</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function loadAdminStats() {
+            try {
+                const res = await fetch('/api/admin/stats');
+                const data = await res.json();
+                if (data.ok) {
+                    document.getElementById('admin-stat-users').innerText = data.stats.total_users || 0;
+                    document.getElementById('admin-stat-subs').innerText = data.stats.active_subscriptions || 0;
+                    document.getElementById('admin-stat-bots').innerText = data.running_worker_bots_memory || 0;
+                    document.getElementById('admin-stat-deals').innerText = data.stats.total_deals || 0;
+                }
+            } catch (e) {}
+        }
+
+        document.addEventListener('DOMContentLoaded', loadDashboardData);
+    </script>
+</body>
+</html>

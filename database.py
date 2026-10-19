@@ -618,5 +618,50 @@ async def get_all_active_worker_bots() -> List[Dict[str, Any]]:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
 
+async def get_user(user_id: int) -> Optional[Dict[str, Any]]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+async def get_deals_by_buyer(buyer_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM deals WHERE buyer_id = ? ORDER BY deal_id DESC LIMIT ?",
+            (buyer_id, limit)
+        ) as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+async def get_all_users_paged(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT u.user_id, u.username, u.first_name, u.created_at, u.last_seen,
+                      s.plan, s.expires_at,
+                      wb.bot_username
+               FROM users u
+               LEFT JOIN subscriptions s ON u.user_id = s.user_id
+               LEFT JOIN worker_bots wb ON u.user_id = wb.user_id
+               ORDER BY u.last_seen DESC LIMIT ? OFFSET ?""",
+            (limit, offset)
+        ) as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+async def get_all_worker_bots_full() -> List[Dict[str, Any]]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT wb.*, u.username as owner_username, u.first_name as owner_first_name
+               FROM worker_bots wb
+               LEFT JOIN users u ON wb.user_id = u.user_id
+               ORDER BY wb.updated_at DESC"""
+        ) as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
 
 

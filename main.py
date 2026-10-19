@@ -168,6 +168,25 @@ async def expiration_checker(bot: Bot):
         except Exception as e:
             logger.error(f"Error in expiration checker: {e}")
 
+async def start_web_server():
+    try:
+        import uvicorn
+        from web_server import app as fastapi_app
+        host = getattr(config, "WEB_HOST", "0.0.0.0")
+        port = getattr(config, "WEB_PORT", 8080)
+        server_config = uvicorn.Config(
+            app=fastapi_app,
+            host=host,
+            port=port,
+            log_level="warning",
+            access_log=False
+        )
+        server = uvicorn.Server(server_config)
+        logger.info(f"NFT Deals SaaS Web Server running on http://{host}:{port}")
+        await server.serve()
+    except Exception as e:
+        logger.error(f"Error starting web server: {e}")
+
 async def main():
     if not config.BOT_TOKEN or config.BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
         print("\n" + "="*60)
@@ -255,6 +274,7 @@ async def main():
     checker_task = asyncio.create_task(expiration_checker(bot))
     ton_task = asyncio.create_task(ton_background_checker(bot))
     star_gifts_task = asyncio.create_task(star_gifts_background_checker(bot))
+    web_task = asyncio.create_task(start_web_server())
 
     logger.info("Starting Master bot polling with Anti-DDoS & Worker Manager...")
     try:
@@ -275,6 +295,7 @@ async def main():
             ]
         )
     finally:
+        web_task.cancel()
         timer_task.cancel()
         checker_task.cancel()
         ton_task.cancel()

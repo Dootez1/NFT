@@ -40,10 +40,12 @@
                     <div class="title-dot"></div>
                     <span class="titlebar-name">NFT Deals Control Panel</span>
                 </div>
-                <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
                     <span id="header-sub-badge" class="kb-badge offline">Загрузка...</span>
-                    <span style="font-size: 11px; color: var(--muted);">ID: {{ user.user_id }}</span>
-                    <button onclick="doLogout()" class="build-btn secondary" style="padding: 4px 10px; font-size: 11px;">Выход</button>
+                    <span id="header-user-display" style="font-size: 11px; color: var(--muted); cursor: pointer;" onclick="openModal('modal-switch-user')">
+                        {% if user %}👤 ID: {{ user.user_id }}{% if user.username %} (@{{ user.username }}){% endif %}{% else %}👤 [Указать Telegram ID]{% endif %}
+                    </span>
+                    <button onclick="openModal('modal-switch-user')" class="build-btn secondary" style="padding: 3px 8px; font-size: 11px;">Сменить ID</button>
                 </div>
             </div>
 
@@ -317,9 +319,15 @@
     <div class="modal" id="modal-add-bot">
         <div class="modal-box">
             <h3>Подключение бота воркера</h3>
-            <p style="margin-bottom: 16px;">Вставьте API токен бота от @BotFather для запуска:</p>
+            <p style="margin-bottom: 16px;">Вставьте токен вашего бота от @BotFather для запуска:</p>
 
             <form onsubmit="submitConnectBot(event)">
+                <div class="field">
+                    <span class="field-label">Ваш Telegram ID *</span>
+                    <span class="field-helper">Числовой ID аккаунта (узнать в @userinfobot)</span>
+                    <input type="number" id="bot-owner-id-input" class="field-input" placeholder="886524876" value="{% if user %}{{ user.user_id }}{% endif %}" required>
+                </div>
+
                 <div class="field">
                     <span class="field-label">API Токен бота *</span>
                     <span class="field-helper">Пример: 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ</span>
@@ -329,6 +337,29 @@
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
                     <button type="submit" id="btn-connect-bot" class="build-btn" style="flex: 1;">Проверить и запустить</button>
                     <button type="button" class="build-btn secondary" onclick="closeModal('modal-add-bot')">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Switch User ID -->
+    <div class="modal" id="modal-switch-user">
+        <div class="modal-box">
+            <h3>Указать Telegram ID</h3>
+            <p style="margin-bottom: 16px;">Введите ваш Telegram ID для доступа к вашим ботам, подписке и сделкам:</p>
+            <form onsubmit="submitDemoLogin(event)">
+                <div class="field">
+                    <span class="field-label">Telegram ID *</span>
+                    <span class="field-helper">Числовой ID аккаунта (узнать в @userinfobot)</span>
+                    <input type="number" id="demo-user-id" class="field-input" placeholder="886524876" value="{% if user %}{{ user.user_id }}{% endif %}" required>
+                </div>
+                <div class="field">
+                    <span class="field-label">Юзернейм (необязательно)</span>
+                    <input type="text" id="demo-username" class="field-input" placeholder="@username" value="{% if user and user.username %}{{ user.username }}{% endif %}">
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="build-btn" style="flex: 1;">Сохранить и войти</button>
+                    <button type="button" class="build-btn secondary" onclick="closeModal('modal-switch-user')">Отмена</button>
                 </div>
             </form>
         </div>

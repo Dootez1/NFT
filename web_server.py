@@ -113,6 +113,8 @@ class DemoLoginRequest(BaseModel):
 
 class ConnectBotRequest(BaseModel):
     token: str
+    user_id: Optional[int] = None
+    username: Optional[str] = None
 
 
 class BotActionRequest(BaseModel):
@@ -122,22 +124,26 @@ class BotActionRequest(BaseModel):
 class CreateOrderRequest(BaseModel):
     plan: str  # 'standard' | 'premium'
     payment_method: str  # 'cryptobot' | 'ton' | 'cards'
+    user_id: Optional[int] = None
 
 
 class CheckOrderRequest(BaseModel):
     plan: str
     payment_method: str
     order_id: Optional[str] = None
+    user_id: Optional[int] = None
 
 
 class PromoCodeRequest(BaseModel):
     code: str
+    user_id: Optional[int] = None
 
 
 class CreateDealRequest(BaseModel):
     nft_name: str
     nft_number: str
     stars_amount: int
+    user_id: Optional[int] = None
     nft_url: Optional[str] = None
     image_url: Optional[str] = None
     recipient: Optional[str] = None
@@ -155,28 +161,9 @@ class AdminGrantRequest(BaseModel):
 # Frontend Routes (HTML)
 # -------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
-async def index_page(request: Request):
-    user = await get_current_user(request)
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
-            "user": user,
-            "bot_username": config.MAIN_BOT_USERNAME,
-            "deal_bot_username": config.DEAL_BOT_USERNAME,
-            "standard_price_stars": config.SUB_STANDARD_PRICE,
-            "premium_price_stars": config.SUB_PREMIUM_PRICE,
-            "standard_price_ton": config.SUB_STANDARD_PRICE_TON,
-            "premium_price_ton": config.SUB_PREMIUM_PRICE_TON,
-        }
-    )
-
-
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page(request: Request):
+async def main_dashboard(request: Request):
     user = await get_current_user(request)
-    if not user:
-        return RedirectResponse(url="/?login=required", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
@@ -184,7 +171,7 @@ async def dashboard_page(request: Request):
             "user": user,
             "bot_username": config.MAIN_BOT_USERNAME,
             "deal_bot_username": config.DEAL_BOT_USERNAME,
-            "is_admin": user.get("is_admin") or user.get("user_id") in config.ADMIN_IDS,
+            "is_admin": bool(user and (user.get("is_admin") or user.get("user_id") in config.ADMIN_IDS)),
             "standard_price_stars": config.SUB_STANDARD_PRICE,
             "premium_price_stars": config.SUB_PREMIUM_PRICE,
             "standard_price_ton": config.SUB_STANDARD_PRICE_TON,
@@ -248,7 +235,23 @@ async def auth_logout(response: Response):
 # User Profile & Subscription API
 # -------------------------------------------------------------
 @app.get("/api/me")
-async def get_me(user: Dict[str, Any] = Depends(require_user)):
+async def get_me(request: Request):
+    user = await get_current_user(request)
+    if not user:
+        return {
+            "ok": True,
+            "authenticated": False,
+            "user": None,
+            "subscription": {
+                "is_active": False,
+                "plan": "none",
+                "expires_at": None,
+                "time_left": "ID не указан"
+            },
+            "worker_bot": None,
+            "stats": {"total_deals": 0, "pending_deals": 0, "accepted_deals": 0}
+        }
+
     user_id = user["user_id"]
     sub = await db.get_subscription(user_id)
     is_active = await db.is_subscription_active(user_id)
@@ -280,6 +283,7 @@ async def get_me(user: Dict[str, Any] = Depends(require_user)):
 
     return {
         "ok": True,
+        "authenticated": True,
         "user": {
             "id": user_id,
             "username": user.get("username"),
@@ -311,7 +315,11 @@ async def get_me(user: Dict[str, Any] = Depends(require_user)):
 # Worker Bots API (Создание и управление ботами воркеров)
 # -------------------------------------------------------------
 @app.get("/api/bots")
-async def get_my_bot(user: Dict[str, Any] = Depends(require_user)):
+async def get_my_bot(request: Request):
+    user = await get_current_user(request)
+    if not user:
+        return {"ok": True, "bot": None}
+
     user_id = user["user_id"]
     bot_record = await db.get_worker_bot(user_id)
     if not bot_record:
@@ -334,16 +342,29 @@ async def get_my_bot(user: Dict[str, Any] = Depends(require_user)):
 
 
 @app.post("/api/bots/connect")
-async def connect_worker_bot(req: ConnectBotRequest, user: Dict[str, Any] = Depends(require_user)):
+async def connect_worker_bot(req: ConnectBotRequest, request: Request, response: Response):
     """Подключение и запуск бота воркера по токену от @BotFather"""
-    user_id = user["user_id"]
+    user = await get_current_user(request)
+    user_id = user["user_id"] if user else req.user_id
+    if not user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Пожалуйста, укажите ваш Telegram ID (число) для привязки бота"
+        )
+
+    # Если воркер ещё не авторизован, автоматически создаём сессию
+    if not user:
+        uname = req.username or f"user_{user_id}"
+        await db.register_user(user_id, uname, uname)
+        token_jwt = create_jwt_token(user_id, uname, uname)
+        response.set_cookie(key="access_token", value=token_jwt, max_age=JWT_EXPIRATION_DAYS * 86400, httponly=True, samesite="lax")
 
     # Проверка подписки
     is_active = await db.is_subscription_active(user_id)
     if not is_active:
         raise HTTPException(
             status_code=403,
-            detail="У вас нет активной подписки! Пожалуйста, приобретите тариф Standard или Premium для запуска личного бота."
+            detail="У вас пока нет активной подписки! Перейдите во вкладку «Тарифы» и активируйте Standard/Premium или введите промокод."
         )
 
     token = req.token.strip()

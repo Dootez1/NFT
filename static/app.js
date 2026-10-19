@@ -83,8 +83,9 @@ async function submitDemoLogin(e) {
         });
         const data = await res.json();
         if (data.ok) {
-            showToast('Успешный вход! Перенаправляем...', 'success');
-            setTimeout(() => { window.location.href = '/dashboard'; }, 800);
+            showToast('Telegram ID успешно установлен!', 'success');
+            closeModal('modal-switch-user');
+            setTimeout(() => { window.location.reload(); }, 600);
         } else {
             showToast(data.detail || 'Ошибка авторизации', 'error');
         }
@@ -103,6 +104,9 @@ async function submitConnectBot(e) {
         return;
     }
 
+    const ownerIdInput = document.getElementById('bot-owner-id-input');
+    const ownerId = ownerIdInput && ownerIdInput.value.trim() ? parseInt(ownerIdInput.value.trim()) : null;
+
     const btn = document.getElementById('btn-connect-bot');
     const originalText = btn.innerHTML;
     btn.innerHTML = '⏳ Проверка и запуск...';
@@ -112,7 +116,7 @@ async function submitConnectBot(e) {
         const res = await fetch('/api/bots/connect', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: token })
+            body: JSON.stringify({ token: token, user_id: ownerId })
         });
         const data = await res.json();
         if (data.ok) {

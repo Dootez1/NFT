@@ -157,16 +157,19 @@ class AdminGrantRequest(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 async def index_page(request: Request):
     user = await get_current_user(request)
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "user": user,
-        "bot_username": config.MAIN_BOT_USERNAME,
-        "deal_bot_username": config.DEAL_BOT_USERNAME,
-        "standard_price_stars": config.SUB_STANDARD_PRICE,
-        "premium_price_stars": config.SUB_PREMIUM_PRICE,
-        "standard_price_ton": config.SUB_STANDARD_PRICE_TON,
-        "premium_price_ton": config.SUB_PREMIUM_PRICE_TON,
-    })
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={
+            "user": user,
+            "bot_username": config.MAIN_BOT_USERNAME,
+            "deal_bot_username": config.DEAL_BOT_USERNAME,
+            "standard_price_stars": config.SUB_STANDARD_PRICE,
+            "premium_price_stars": config.SUB_PREMIUM_PRICE,
+            "standard_price_ton": config.SUB_STANDARD_PRICE_TON,
+            "premium_price_ton": config.SUB_PREMIUM_PRICE_TON,
+        }
+    )
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -174,18 +177,21 @@ async def dashboard_page(request: Request):
     user = await get_current_user(request)
     if not user:
         return RedirectResponse(url="/?login=required", status_code=status.HTTP_302_FOUND)
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
-        "user": user,
-        "bot_username": config.MAIN_BOT_USERNAME,
-        "deal_bot_username": config.DEAL_BOT_USERNAME,
-        "is_admin": user.get("is_admin") or user.get("user_id") in config.ADMIN_IDS,
-        "standard_price_stars": config.SUB_STANDARD_PRICE,
-        "premium_price_stars": config.SUB_PREMIUM_PRICE,
-        "standard_price_ton": config.SUB_STANDARD_PRICE_TON,
-        "premium_price_ton": config.SUB_PREMIUM_PRICE_TON,
-        "ton_address": config.TON_WALLET_ADDRESS,
-    })
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard.html",
+        context={
+            "user": user,
+            "bot_username": config.MAIN_BOT_USERNAME,
+            "deal_bot_username": config.DEAL_BOT_USERNAME,
+            "is_admin": user.get("is_admin") or user.get("user_id") in config.ADMIN_IDS,
+            "standard_price_stars": config.SUB_STANDARD_PRICE,
+            "premium_price_stars": config.SUB_PREMIUM_PRICE,
+            "standard_price_ton": config.SUB_STANDARD_PRICE_TON,
+            "premium_price_ton": config.SUB_PREMIUM_PRICE_TON,
+            "ton_address": config.TON_WALLET_ADDRESS,
+        }
+    )
 
 
 # -------------------------------------------------------------

@@ -127,6 +127,10 @@ async def init_db():
             await db.execute("ALTER TABLE deals ADD COLUMN lang TEXT DEFAULT 'RU';")
         except Exception:
             pass
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT;")
+        except Exception:
+            pass
 
         # Performance Indexes
         await db.execute("CREATE INDEX IF NOT EXISTS idx_deals_status_expires ON deals(status, expires_at);")
@@ -150,6 +154,40 @@ async def register_user(user_id: int, username: Optional[str], first_name: str) 
         """, (user_id, username, first_name))
         await db.commit()
         return True
+
+async def register_user_with_password(user_id: int, username: Optional[str], first_name: str, password_hash: str) -> bool:
+    async with get_write_db() as db:
+        await db.execute("""
+            INSERT INTO users (user_id, username, first_name, password_hash)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                username = COALESCE(excluded.username, users.username),
+                first_name = COALESCE(excluded.first_name, users.first_name),
+                password_hash = excluded.password_hash,
+                last_seen = CURRENT_TIMESTAMP
+        """, (user_id, username, first_name, password_hash))
+        await db.commit()
+        return True
+
+async def verify_user_login(user_identifier: str, password_hash: str) -> Optional[Dict[str, Any]]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        clean = user_identifier.replace("@", "").strip()
+        if clean.isdigit():
+            query = "SELECT * FROM users WHERE user_id = ?"
+            params = (int(clean),)
+        else:
+            query = "SELECT * FROM users WHERE LOWER(username) = LOWER(?)"
+            params = (clean,)
+        async with db.execute(query, params) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return None
+            user_dict = dict(row)
+            stored_hash = user_dict.get("password_hash")
+            if not stored_hash or stored_hash == password_hash:
+                return user_dict
+            return None
 
 async def add_or_extend_subscription_hours(
     user_id: int,

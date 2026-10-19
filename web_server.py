@@ -105,6 +105,17 @@ async def require_admin(request: Request) -> Dict[str, Any]:
 # -------------------------------------------------------------
 # Pydantic Request Models
 # -------------------------------------------------------------
+class RegisterRequest(BaseModel):
+    user_id: int
+    username: Optional[str] = None
+    password: str
+
+
+class LoginRequest(BaseModel):
+    login: str  # user_id or username
+    password: str
+
+
 class DemoLoginRequest(BaseModel):
     user_id: int
     username: Optional[str] = None
@@ -157,13 +168,31 @@ class AdminGrantRequest(BaseModel):
     days: int = 30
 
 
+def hash_password(password: str) -> str:
+    return hashlib.sha256(f"salt_2026_{password}".encode()).hexdigest()
+
+
 # -------------------------------------------------------------
 # Frontend Routes (HTML)
 # -------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
-@app.get("/dashboard", response_class=HTMLResponse)
-async def main_dashboard(request: Request):
+@app.get("/login", response_class=HTMLResponse)
+async def login_gateway(request: Request):
     user = await get_current_user(request)
+    if user:
+        return RedirectResponse(url="/dashboard", status_code=status.HTTP_302_FOUND)
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={}
+    )
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page(request: Request):
+    user = await get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
@@ -179,6 +208,54 @@ async def main_dashboard(request: Request):
             "ton_address": config.TON_WALLET_ADDRESS,
         }
     )
+
+
+# -------------------------------------------------------------
+# Authentication API
+# -------------------------------------------------------------
+@app.post("/api/auth/register")
+async def auth_register(req: RegisterRequest, response: Response):
+    user_id = req.user_id
+    if user_id <= 0:
+        raise HTTPException(status_code=400, detail="Telegram ID должен быть числом")
+    if len(req.password.strip()) < 4:
+        raise HTTPException(status_code=400, detail="Пароль должен содержать минимум 4 символа")
+
+    username = (req.username or "").lstrip("@").strip() or f"user_{user_id}"
+    pwd_hash = hash_password(req.password.strip())
+
+    await db.register_user_with_password(user_id, username, username, pwd_hash)
+    token = create_jwt_token(user_id, username, username)
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        max_age=JWT_EXPIRATION_DAYS * 86400,
+        httponly=True,
+        samesite="lax",
+    )
+    return {"ok": True, "token": token, "redirect": "/dashboard"}
+
+
+@app.post("/api/auth/login")
+async def auth_login(req: LoginRequest, response: Response):
+    login_id = req.login.strip()
+    pwd_hash = hash_password(req.password.strip())
+
+    user_row = await db.verify_user_login(login_id, pwd_hash)
+    if not user_row:
+        raise HTTPException(status_code=400, detail="Неверный ID/юзернейм или пароль")
+
+    user_id = user_row["user_id"]
+    username = user_row.get("username") or f"user_{user_id}"
+    token = create_jwt_token(user_id, username, user_row.get("first_name", username))
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        max_age=JWT_EXPIRATION_DAYS * 86400,
+        httponly=True,
+        samesite="lax",
+    )
+    return {"ok": True, "token": token, "redirect": "/dashboard"}
 
 
 # -------------------------------------------------------------

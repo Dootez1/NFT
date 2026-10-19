@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход и Регистрация — NFT Deals</title>
+    <meta name="theme-color" content="#AE7FE2">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .auth-container {
+            width: min(520px, 94vw);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="blob b1"></div>
+    <div class="blob b2"></div>
+    <div class="blob b3"></div>
+
+    <div class="app-wrapper">
+        <div class="app auth-container">
+
+            <!-- Titlebar -->
+            <div class="titlebar">
+                <div class="titlebar-left">
+                    <div class="title-dot"></div>
+                    <span class="titlebar-name">NFT Deals Access Control</span>
+                </div>
+                <div>
+                    <span class="kb-badge online">● SECURE GATEWAY</span>
+                </div>
+            </div>
+
+            <!-- Menustrip Tabs -->
+            <div class="menustrip">
+                <div id="tab-nav-register" class="menu-item active" onclick="switchAuthTab('register')">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 2a5 5 0 1 1 0 10A5 5 0 0 1 8 3zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" opacity=".9"/></svg>
+                    Регистрация
+                </div>
+                <div id="tab-nav-login" class="menu-item" onclick="switchAuthTab('login')">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 1h8l3 3v10H1V4L4 1zm0 1.5L2 5v8h12V5l-2-2.5H4zm2 5h4v1H6V7.5zm0 2.5h4v1H6V10z" opacity=".9"/></svg>
+                    Вход в аккаунт
+                </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="content">
+
+                <!-- TAB: REGISTRATION -->
+                <div id="auth-register-block">
+                    <div class="section-title">Создание профиля воркера</div>
+
+                    <form onsubmit="handleRegister(event)">
+                        <div class="field">
+                            <span class="field-label">Telegram ID *</span>
+                            <span class="field-helper">Ваш числовой ID в Telegram (узнать в боте @userinfobot)</span>
+                            <input type="number" id="reg-user-id" class="field-input" placeholder="Например: 886524876" required>
+                        </div>
+
+                        <div class="field">
+                            <span class="field-label">Telegram Username</span>
+                            <span class="field-helper">Ваш юзернейм в Telegram без пробелов (необязательно)</span>
+                            <input type="text" id="reg-username" class="field-input" placeholder="@username">
+                        </div>
+
+                        <div class="field">
+                            <span class="field-label">Пароль аккаунта *</span>
+                            <span class="field-helper">Минимум 4 символа для защиты входа</span>
+                            <input type="password" id="reg-password" class="field-input" placeholder="••••••••" required>
+                        </div>
+
+                        <div class="field">
+                            <span class="field-label">Повторите пароль *</span>
+                            <input type="password" id="reg-password-confirm" class="field-input" placeholder="••••••••" required>
+                        </div>
+
+                        <button type="submit" id="btn-reg-submit" class="build-btn" style="width: 100%; margin-top: 10px; padding: 13px;">
+                            Зарегистрироваться и войти в панель →
+                        </button>
+                    </form>
+                </div>
+
+                <!-- TAB: LOGIN -->
+                <div id="auth-login-block" style="display: none;">
+                    <div class="section-title">Авторизация в панели управления</div>
+
+                    <form onsubmit="handleLogin(event)">
+                        <div class="field">
+                            <span class="field-label">Telegram ID или Username *</span>
+                            <span class="field-helper">Числовой ID или @username, указанный при регистрации</span>
+                            <input type="text" id="login-identifier" class="field-input" placeholder="886524876 или @username" required>
+                        </div>
+
+                        <div class="field">
+                            <span class="field-label">Пароль *</span>
+                            <input type="password" id="login-password" class="field-input" placeholder="••••••••" required>
+                        </div>
+
+                        <button type="submit" id="btn-login-submit" class="build-btn" style="width: 100%; margin-top: 10px; padding: 13px;">
+                            Войти в систему →
+                        </button>
+                    </form>
+                </div>
+
+            </div>
+
+            <!-- Footer -->
+            <div class="footer">
+                <div>NFT Deals Platform Access</div>
+                <div style="color: var(--dim);">Secure Session</div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="toast" id="toast">Уведомление</div>
+
+    <script src="/static/app.js"></script>
+    <script>
+        function switchAuthTab(tab) {
+            const regBlock = document.getElementById('auth-register-block');
+            const loginBlock = document.getElementById('auth-login-block');
+            const regNav = document.getElementById('tab-nav-register');
+            const loginNav = document.getElementById('tab-nav-login');
+
+            if (tab === 'register') {
+                regBlock.style.display = 'block';
+                loginBlock.style.display = 'none';
+                regNav.classList.add('active');
+                loginNav.classList.remove('active');
+            } else {
+                regBlock.style.display = 'none';
+                loginBlock.style.display = 'block';
+                regNav.classList.remove('active');
+                loginNav.classList.add('active');
+            }
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const userId = parseInt(document.getElementById('reg-user-id').value.trim());
+            const username = document.getElementById('reg-username').value.trim();
+            const password = document.getElementById('reg-password').value;
+            const confirm = document.getElementById('reg-password-confirm').value;
+
+            if (!userId || isNaN(userId)) {
+                showToast('Укажите корректный Telegram ID!', 'error');
+                return;
+            }
+            if (password !== confirm) {
+                showToast('Введенные пароли не совпадают!', 'error');
+                return;
+            }
+            if (password.length < 4) {
+                showToast('Пароль должен быть не менее 4 символов!', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('btn-reg-submit');
+            btn.innerHTML = '⏳ Регистрация...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, username: username, password: password })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    showToast('Регистрация успешна! Входим в кабинет...', 'success');
+                    setTimeout(() => { window.location.href = data.redirect || '/dashboard'; }, 700);
+                } else {
+                    showToast(data.detail || 'Ошибка регистрации', 'error');
+                }
+            } catch (err) {
+                showToast('Ошибка сети: ' + err.message, 'error');
+            } finally {
+                btn.innerHTML = 'Зарегистрироваться и войти в панель →';
+                btn.disabled = false;
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const login = document.getElementById('login-identifier').value.trim();
+            const password = document.getElementById('login-password').value;
+
+            if (!login || !password) {
+                showToast('Заполните логин и пароль!', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('btn-login-submit');
+            btn.innerHTML = '⏳ Проверка...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ login: login, password: password })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    showToast('Вход выполнен! Перенаправление...', 'success');
+                    setTimeout(() => { window.location.href = data.redirect || '/dashboard'; }, 700);
+                } else {
+                    showToast(data.detail || 'Неверные данные для входа', 'error');
+                }
+            } catch (err) {
+                showToast('Ошибка сети: ' + err.message, 'error');
+            } finally {
+                btn.innerHTML = 'Войти в систему →';
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

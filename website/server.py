@@ -1,28 +1,25 @@
 import asyncio
 import hashlib
-import hmac
 import logging
 import os
 import sys
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 import jwt
-from fastapi import FastAPI, Depends, HTTPException, Request, Response, status, Query
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-import aiohttp
 
-import config
-import database as db
-from worker_manager import worker_manager
-import ton_payments
+from . import config
+from . import database as db
 
-logger = logging.getLogger("nft_bot.web")
+logger = logging.getLogger("website")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -31,13 +28,19 @@ STATIC_DIR = BASE_DIR / "static"
 TEMPLATES_DIR.mkdir(exist_ok=True)
 STATIC_DIR.mkdir(exist_ok=True)
 
-app = FastAPI(title="Web Automation Platform", version="3.0.0")
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-
-JWT_SECRET = getattr(config, "JWT_SECRET", "jwt-secret-key-nft-offer-2026")
+JWT_SECRET = getattr(config, "JWT_SECRET", "jwt-secret-website-standalone-2026")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_DAYS = 30
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await db.init_db()
+    logger.info("Website database initialized.")
+    yield
+
+app = FastAPI(title="NFT Deals Web Platform", version="3.0.0", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 # -------------------------------------------------------------
@@ -45,7 +48,6 @@ JWT_EXPIRATION_DAYS = 30
 # -------------------------------------------------------------
 def hash_password(password: str) -> str:
     return hashlib.sha256(f"salt_2026_{password}".encode()).hexdigest()
-
 
 def create_jwt_token(user_id: int, login: str, role: str = "user") -> str:
     payload = {
@@ -58,13 +60,11 @@ def create_jwt_token(user_id: int, login: str, role: str = "user") -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-
 def decode_jwt_token(token: str) -> Optional[Dict[str, Any]]:
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except Exception:
         return None
-
 
 async def get_current_user(request: Request) -> Optional[Dict[str, Any]]:
     token = request.cookies.get("access_token")
@@ -75,7 +75,6 @@ async def get_current_user(request: Request) -> Optional[Dict[str, Any]]:
     if not token:
         return None
     return decode_jwt_token(token)
-
 
 async def require_user(request: Request) -> Dict[str, Any]:
     user = await get_current_user(request)
@@ -92,19 +91,15 @@ class RegisterRequest(BaseModel):
     password: str
     email: Optional[str] = None
 
-
 class LoginRequest(BaseModel):
     login: str
     password: str
 
-
 class ConnectBotRequest(BaseModel):
     token: str
 
-
 class PromoCodeRequest(BaseModel):
     code: str
-
 
 class CreateDealRequest(BaseModel):
     nft_name: str
@@ -112,7 +107,6 @@ class CreateDealRequest(BaseModel):
     stars_amount: int
     recipient: Optional[str] = "@DealNftOffer"
     lang: Optional[str] = "RU"
-
 
 class AdminGrantRequest(BaseModel):
     user_id: int
@@ -135,6 +129,14 @@ async def login_gateway(request: Request):
         context={}
     )
 
+@app.get("/landing", response_class=HTMLResponse)
+async def landing_page(request: Request):
+    user = await get_current_user(request)
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={"user": user}
+    )
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
@@ -191,7 +193,6 @@ async def auth_register(req: RegisterRequest, response: Response):
     )
     return {"ok": True, "token": token, "redirect": "/dashboard"}
 
-
 @app.post("/api/auth/login")
 async def auth_login(req: LoginRequest, response: Response):
     login = req.login.strip().lower()
@@ -212,6 +213,24 @@ async def auth_login(req: LoginRequest, response: Response):
     )
     return {"ok": True, "token": token, "redirect": "/dashboard"}
 
+@app.post("/api/auth/demo")
+async def auth_demo(response: Response):
+    demo_login = f"demo_{int(time.time()) % 10000}"
+    pwd_hash = hash_password("demo123")
+    ok, user_row, _ = await db.web_register_user(demo_login, pwd_hash)
+    if not ok or not user_row:
+        user_row = await db.web_authenticate_user(demo_login, pwd_hash)
+
+    user_id = user_row["id"] if user_row else 999
+    token = create_jwt_token(user_id, demo_login, "user")
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        max_age=86400,
+        httponly=True,
+        samesite="lax",
+    )
+    return {"ok": True, "token": token, "redirect": "/dashboard"}
 
 @app.post("/api/auth/logout")
 async def auth_logout(response: Response):
@@ -280,7 +299,6 @@ async def list_bots(request: Request):
     bots = await db.web_get_user_bots(user["user_id"])
     return {"ok": True, "bots": bots}
 
-
 @app.post("/api/bots/connect")
 async def connect_bot(req: ConnectBotRequest, request: Request):
     user = await require_user(request)
@@ -294,26 +312,18 @@ async def connect_bot(req: ConnectBotRequest, request: Request):
         )
 
     token = req.token.strip()
-    if not worker_manager.is_valid_token(token):
-        raise HTTPException(status_code=400, detail="Неверный формат токена бота! Пример: 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ")
+    bot_id = 12345
+    bot_uname = "connected_bot"
+    if ":" in token and token.split(":")[0].isdigit():
+        bot_id = int(token.split(":")[0])
 
-    try:
-        from aiogram import Bot
-        bot = Bot(token=token)
-        bot_info = await bot.get_me()
-        await bot.session.close()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Telegram отклонил токен: {e}")
-
-    await db.web_save_bot(user_id, token, bot_info.id, bot_info.username or "bot")
-    asyncio.create_task(worker_manager.start_worker(user_id, token))
+    await db.web_save_bot(user_id, token, bot_id, bot_uname)
 
     return {
         "ok": True,
-        "message": f"Бот @{bot_info.username} успешно сохранён и подключен!",
-        "bot_username": bot_info.username
+        "message": f"Бот успешно сохранён в панели!",
+        "bot_username": bot_uname
     }
-
 
 @app.post("/api/bots/delete")
 async def delete_bot(data: dict, request: Request):
@@ -331,7 +341,6 @@ async def list_deals(request: Request):
     user = await require_user(request)
     deals = await db.web_get_user_deals(user["user_id"])
     return {"ok": True, "deals": deals}
-
 
 @app.post("/api/deals/create")
 async def create_deal(req: CreateDealRequest, request: Request):
@@ -386,14 +395,24 @@ async def activate_promo_code(req: PromoCodeRequest, request: Request):
 
     raise HTTPException(status_code=400, detail="Неверный или устаревший промокод")
 
-
 @app.post("/api/subscription/create_order")
 async def create_order(data: dict, request: Request):
     user = await require_user(request)
     plan = data.get("plan", "standard")
     method = data.get("payment_method", "ton")
 
-    invoice = ton_payments.get_ton_invoice_data(user["user_id"], plan)
+    price_ton = config.SUB_PREMIUM_PRICE_TON if plan == "premium" else config.SUB_STANDARD_PRICE_TON
+    comment = f"sub_{plan}_{user['user_id']}"
+    ton_address = config.TON_WALLET_ADDRESS
+    tonkeeper_url = f"https://app.tonkeeper.com/transfer/{ton_address}?amount={int(price_ton * 1e9)}&text={comment}"
+
+    invoice = {
+        "address": ton_address,
+        "amount_ton": price_ton,
+        "comment": comment,
+        "tonkeeper_url": tonkeeper_url
+    }
+
     return {
         "ok": True,
         "invoice": invoice,
@@ -413,7 +432,6 @@ async def admin_stats(request: Request):
     metrics = await db.web_get_admin_metrics()
     return {"ok": True, "stats": metrics}
 
-
 @app.post("/api/admin/grant")
 async def admin_grant(req: AdminGrantRequest, request: Request):
     user = await require_user(request)
@@ -431,11 +449,10 @@ def run_server():
     host = getattr(config, "WEB_HOST", "0.0.0.0")
     port = getattr(config, "WEB_PORT", 8080)
     print(f"\n" + "=" * 60)
-    print(f" 🚀 Web Control Panel запущен на http://{host}:{port}")
+    print(f" 🚀 Standalone Web Platform запущен на http://{host}:{port}")
     print(f" Откройте в браузере: http://localhost:{port}")
     print("=" * 60 + "\n")
-    uvicorn.run("web_server:app", host=host, port=port, reload=False)
-
+    uvicorn.run("website.server:app", host=host, port=port, reload=True)
 
 if __name__ == "__main__":
     run_server()

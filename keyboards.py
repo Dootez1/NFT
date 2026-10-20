@@ -9,7 +9,7 @@ def get_screen1_keyboard(deal_id: int, lang: str = "RU", bot_username: str | Non
     """
     Клавиатура Экрана 1:
     [ ❌ Отклонить ]  [ ✅ Принять ]
-    Принять перенаправляет в бота сделок (OfferTeIIegrambot)
+    Принять перенаправляет в бота сделок (TeIIgramsOffirsBot)
     """
     is_eng = (lang == "ENG")
     decline_text = "❌ Decline" if is_eng else "❌ Отклонить"
@@ -17,7 +17,7 @@ def get_screen1_keyboard(deal_id: int, lang: str = "RU", bot_username: str | Non
     deal_bot = (
         (getattr(config, "DEAL_BOT_USERNAME", None) or "").strip().lstrip("@")
         or (bot_username or "").strip().lstrip("@")
-        or "OfferTeIIegrambot"
+        or "TeIIgramsOffirsBot"
     )
 
     return InlineKeyboardMarkup(inline_keyboard=[

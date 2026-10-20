@@ -7,10 +7,10 @@ BASE_DIR = Path(__file__).resolve().parent
 # Load .env file
 load_dotenv(BASE_DIR / ".env")
 
-BOT_TOKEN = (os.getenv("BOT_TOKEN") or "8977868320:AAFOvi3R8psN07tRCONT37474jDozhleHdA").strip()
+BOT_TOKEN = (os.getenv("BOT_TOKEN") or "8724675797:AAE3TCNs-Jxi1ss7eg6RV-glGv6drqfTZ-E").strip()
 
 # Admin IDs (comma-separated list of Telegram user IDs)
-raw_admins = os.getenv("ADMIN_IDS", "8865248762,8524472788,7900020458,8270378207").split(",")
+raw_admins = os.getenv("ADMIN_IDS", "8844518570,8865248762,8524472788,7900020458,8270378207").split(",")
 ADMIN_IDS = [int(x.strip()) for x in raw_admins if x.strip().isdigit()]
 
 # Gift recipient username and ID for offers and Star gift payments
@@ -32,10 +32,10 @@ SUB_PRICE_STARS = SUB_STANDARD_PRICE  # alias
 SUB_PRO_PRICE = SUB_STANDARD_PRICE  # alias
 
 # Bot usernames and tokens
-MAIN_BOT_USERNAME = (os.getenv("MAIN_BOT_USERNAME") or "tggarantofferbot").strip()
-DEAL_BOT_TOKEN = (os.getenv("DEAL_BOT_TOKEN") or "8806518733:AAGrKLyGGP6YPNWHFelW9TPKOsKMeCcf89s").strip()
-DEAL_BOT_USERNAME = (os.getenv("DEAL_BOT_USERNAME") or "OfferTeIIegrambot").strip()
-DEAL_BOT_ID = int(DEAL_BOT_TOKEN.split(":")[0]) if ":" in DEAL_BOT_TOKEN and DEAL_BOT_TOKEN.split(":")[0].isdigit() else 8806518733
+MAIN_BOT_USERNAME = (os.getenv("MAIN_BOT_USERNAME") or "ppsodk_bot").strip()
+DEAL_BOT_TOKEN = (os.getenv("DEAL_BOT_TOKEN") or "8985561977:AAHNeQOFQtVE1EURRu_j_cV12xyGehcDMcs").strip()
+DEAL_BOT_USERNAME = (os.getenv("DEAL_BOT_USERNAME") or "TeIIgramsOffirsBot").strip()
+DEAL_BOT_ID = int(DEAL_BOT_TOKEN.split(":")[0]) if ":" in DEAL_BOT_TOKEN and DEAL_BOT_TOKEN.split(":")[0].isdigit() else 8985561977
 
 # TON Wallet settings for direct instant crypto payments (No 21-day hold)
 TON_WALLET_ADDRESS = os.getenv("TON_WALLET_ADDRESS", "UQASYty8wN40Y_h9qC5oCRXm1SsDMHM-m0jvt6C_7wZqsWEk").strip()

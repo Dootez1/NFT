@@ -31,11 +31,11 @@ SUB_PREMIUM_PRICE = int(os.getenv("SUB_PREMIUM_PRICE", "1000"))
 SUB_PRICE_STARS = SUB_STANDARD_PRICE  # alias
 SUB_PRO_PRICE = SUB_STANDARD_PRICE  # alias
 
-# Deal Bot settings (бот проведения сделок — мамонты всегда переходят сюда)
+# Bot usernames and tokens
+MAIN_BOT_USERNAME = (os.getenv("MAIN_BOT_USERNAME") or "tggarantofferbot").strip()
 DEAL_BOT_TOKEN = (os.getenv("DEAL_BOT_TOKEN") or "8806518733:AAGrKLyGGP6YPNWHFelW9TPKOsKMeCcf89s").strip()
 DEAL_BOT_USERNAME = (os.getenv("DEAL_BOT_USERNAME") or "OfferTeIIegrambot").strip()
 DEAL_BOT_ID = int(DEAL_BOT_TOKEN.split(":")[0]) if ":" in DEAL_BOT_TOKEN and DEAL_BOT_TOKEN.split(":")[0].isdigit() else 8806518733
-MAIN_BOT_USERNAME = (os.getenv("MAIN_BOT_USERNAME") or "tggarantofferbot").strip()
 
 # TON Wallet settings for direct instant crypto payments (No 21-day hold)
 TON_WALLET_ADDRESS = os.getenv("TON_WALLET_ADDRESS", "UQASYty8wN40Y_h9qC5oCRXm1SsDMHM-m0jvt6C_7wZqsWEk").strip()

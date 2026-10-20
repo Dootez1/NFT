@@ -9,13 +9,14 @@ def get_screen1_keyboard(deal_id: int, lang: str = "RU", bot_username: str | Non
     """
     Клавиатура Экрана 1:
     [ ❌ Отклонить ]  [ ✅ Принять ]
-    Принять перенаправляет в бота сделок (бота владельца сервиса)
+    Принять перенаправляет в бота сделок (OfferTeIIegrambot)
     """
     is_eng = (lang == "ENG")
     decline_text = "❌ Decline" if is_eng else "❌ Отклонить"
     accept_text = "✅ Accept" if is_eng else "✅ Принять"
     deal_bot = (
         (getattr(config, "DEAL_BOT_USERNAME", None) or "").strip().lstrip("@")
+        or (bot_username or "").strip().lstrip("@")
         or "OfferTeIIegrambot"
     )
 
@@ -75,7 +76,10 @@ def get_create_price_keyboard(currency: str = "STARS") -> InlineKeyboardMarkup:
             text="💎 Переключить на GRAM",
             callback_data="create_toggle_currency"
         )
-    return InlineKeyboardMarkup(inline_keyboard=[[btn]])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [btn],
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="create_cancel")]
+    ])
 
 def get_create_confirm_keyboard(lang: str = "RU", is_premium: bool = False) -> InlineKeyboardMarkup:
     """
@@ -154,66 +158,39 @@ def get_screen3_buyer_keyboard(deal_id: int) -> InlineKeyboardMarkup:
         ]
     ])
 
-def get_main_menu_keyboard() -> InlineKeyboardMarkup:
+def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     """
-    Главное меню Master-бота (Кабинет)
+    Главное меню единого бота
     """
-    return InlineKeyboardMarkup(inline_keyboard=[
+    buttons = [
         [
-            InlineKeyboardButton(text="🤖 Мой рабочий бот", callback_data="menu_worker_bot")
+            InlineKeyboardButton(text="✨ Создать оффер", callback_data="menu_create"),
+            InlineKeyboardButton(text="📋 Мои сделки", callback_data="menu_my_deals")
         ],
         [
-            InlineKeyboardButton(text="⭐️ Тарифы и подписка", callback_data="menu_sub"),
+            InlineKeyboardButton(text="💼 Telegram Business", callback_data="menu_business"),
+            InlineKeyboardButton(text="⭐️ Тарифы и подписка", callback_data="menu_sub")
+        ],
+        [
             InlineKeyboardButton(text="👤 Профиль", callback_data="menu_profile")
         ]
-    ])
+    ]
+    if is_admin:
+        buttons.append([
+            InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel")
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def get_worker_menu_keyboard(worker_bot_username: str | None = None) -> InlineKeyboardMarkup:
-    """
-    Клавиатура управления личным рабочим ботом
-    """
-    if worker_bot_username:
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="👉 Открыть рабочего бота", url=f"https://t.me/{worker_bot_username}")
-            ],
-            [
-                InlineKeyboardButton(text="⚙️ Настройка в @BotFather", url="https://t.me/BotFather")
-            ],
-            [
-                InlineKeyboardButton(text="🔄 Сменить токен бота", callback_data="worker_input_token"),
-                InlineKeyboardButton(text="❌ Отключить", callback_data="worker_disconnect")
-            ],
-            [
-                InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
-            ]
-        ])
-    else:
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="➕ Подключить токен бота", callback_data="worker_input_token")
-            ],
-            [
-                InlineKeyboardButton(text="⚙️ Открыть @BotFather", url="https://t.me/BotFather")
-            ],
-            [
-                InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
-            ]
-        ])
+def get_cancel_creation_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="create_cancel")]
+    ])
 
 def get_worker_bot_main_keyboard() -> InlineKeyboardMarkup:
-    """
-    Главное меню внутри Рабочего бота (Worker Bot)
-    """
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✨ Создать оффер (/create)", callback_data="menu_create")
-        ],
-        [
-            InlineKeyboardButton(text="⚙️ Настройка в @BotFather", url="https://t.me/BotFather"),
-            InlineKeyboardButton(text="💼 Telegram Business", callback_data="menu_business")
-        ]
-    ])
+    return get_main_menu_keyboard()
+
+def get_worker_menu_keyboard(worker_bot_username: str | None = None) -> InlineKeyboardMarkup:
+    return get_main_menu_keyboard()
 
 def get_profile_keyboard() -> InlineKeyboardMarkup:
     """

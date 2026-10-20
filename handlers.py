@@ -47,7 +47,6 @@ from keyboards import (
     get_screen2_keyboard,
     get_screen3_buyer_keyboard,
     get_main_menu_keyboard,
-    get_worker_menu_keyboard,
     get_profile_keyboard,
     get_sub_menu_keyboard,
     get_back_to_menu_keyboard,
@@ -86,24 +85,71 @@ def get_buyer_display(deal: dict) -> str:
 
 def get_welcome_text() -> str:
     return (
-        "👋 <b>Добро пожаловать в P2P платформу управления сделками!</b>\n\n"
-        "Надёжный сервис для автоматизации безопасных офферов на подарки в Telegram.\n\n"
-        "🚀 <b>Возможности сервиса:</b>\n"
-        "• <b>Личный рабочий бот</b> — работа через вашего собственного бота без риска бана\n"
-        "• <b>Telegram Business</b> — прямая отправка карточек офферов в личные диалоги\n"
-        "• <b>P2P Эскроу</b> — безопасная передача предметов\n"
+        "👋 <b>Добро пожаловать в сервис безопасных P2P сделок на Telegram подарки!</b>\n\n"
+        "Надёжный сервис для моментального создания и безопасного проведения офферов на покупку и продажу NFT-подарков.\n\n"
+        "🚀 <b>Возможности:</b>\n"
+        "• <b>Создание офферов</b> — моментальное формирование карточки с авто-таймером\n"
+        "• <b>Инлайн-режим</b> — отправка оффера в любые чаты прямо через кнопку\n"
+        "• <b>Telegram Business</b> — прямая доставка оффера в личные диалоги с продавцами\n"
+        "• <b>P2P Эскроу</b> — безопасная передача предметов и верификация подарков\n"
         "• <b>Мгновенные выплаты</b> — Telegram Stars и TON\n\n"
-        "👇 <i>Для начала работы подключите вашего рабочего бота в меню ниже:</i>"
+        "👇 <i>Выберите действие в меню:</i>"
     )
-
-class MasterStates(StatesGroup):
-    waiting_worker_token = State()
 
 class CreateOfferStates(StatesGroup):
     waiting_gift_url = State()
     waiting_price = State()
     confirm_send = State()
     waiting_recipient = State()
+
+def build_randomized_offer_text(nft_name: str, nft_number: str, nft_url: str, stars_txt: str, timer_str: str, lang: str = "RU") -> Tuple[str, str]:
+    """
+    Генерирует рандомизированный текст оффера для защиты от спам-фильтров и блокировок Telegram.
+    Возвращает (offer_text_html, clean_offer_text_plain).
+    """
+    if lang == "ENG":
+        headers = [
+            f"A user offers you <b>{stars_txt}</b> for gift <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>.",
+            f"You received an offer of <b>{stars_txt}</b> for gift <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>.",
+            f"New purchase offer for <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>: <b>{stars_txt}</b>.",
+            f"A buyer wants to purchase <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a> for <b>{stars_txt}</b>."
+        ]
+        clean_headers = [
+            f"A user offers you {stars_txt} for gift {nft_name} #{nft_number}.",
+            f"You received an offer of {stars_txt} for gift {nft_name} #{nft_number}.",
+            f"New purchase offer for {nft_name} #{nft_number}: {stars_txt}.",
+            f"A buyer wants to purchase {nft_name} #{nft_number} for {stars_txt}."
+        ]
+        footers = [
+            f"Expires in {timer_str}.",
+            f"Offer valid for {timer_str}.",
+            f"Active for {timer_str}."
+        ]
+    else:
+        headers = [
+            f"Пользователь предлагает Вам <b>{stars_txt}</b> за подарок <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>.",
+            f"Вам поступило предложение: <b>{stars_txt}</b> за подарок <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>.",
+            f"Новый оффер на покупку подарка <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a> на сумму <b>{stars_txt}</b>.",
+            f"Покупатель готов приобрести <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a> за <b>{stars_txt}</b>."
+        ]
+        clean_headers = [
+            f"Пользователь предлагает Вам {stars_txt} за подарок {nft_name} #{nft_number}.",
+            f"Вам поступило предложение: {stars_txt} за подарок {nft_name} #{nft_number}.",
+            f"Новый оффер на покупку подарка {nft_name} #{nft_number} на сумму {stars_txt}.",
+            f"Покупатель готов приобрести {nft_name} #{nft_number} за {stars_txt}."
+        ]
+        footers = [
+            f"Истекает через {timer_str}.",
+            f"Срок действия: {timer_str}.",
+            f"Действительно ещё {timer_str}.",
+            f"Осталось времени: {timer_str}."
+        ]
+
+    idx = random.randint(0, len(headers) - 1)
+    footer = random.choice(footers)
+    offer_html = f"{headers[idx]}\n\n{footer}"
+    offer_plain = f"{clean_headers[idx]}\n\n{footer}"
+    return offer_html, offer_plain
 
 def build_confirm_card_text(nft_data: dict, price: int, currency: str, lang: str, recipient: str = None) -> str:
     formatted_number = format_number(nft_data.get("number", "1"))
@@ -186,250 +232,798 @@ async def handle_menu_profile(callback: CallbackQuery, bot: Bot):
         await callback.message.answer(text, reply_markup=get_profile_keyboard(), parse_mode="HTML")
     await safe_answer(callback)
 
-# --- MENU NAVIGATION ---
+# --- DEAL START DIRECT HANDLER (/start deal_123) ---
+
+async def handle_deal_start_direct(message: Message, deal_id: int, bot: Bot):
+    """
+    Обрабатывает прямой переход продавца по кнопке «✅ Принять»: /start deal_123
+    """
+    deal = await db.get_deal(deal_id)
+    if not deal:
+        await message.answer(
+            "❌ <b>Оффер не найден или срок его действия истёк.</b>",
+            parse_mode="HTML"
+        )
+        return
+
+    if deal.get("status") == "COMPLETED":
+        await message.answer(
+            "✅ <b>Эта сделка уже успешно завершена.</b>",
+            parse_mode="HTML"
+        )
+        return
+
+    if deal.get("status") in ("CANCELLED", "EXPIRED", "DECLINED"):
+        await message.answer(
+            "❌ <b>Срок действия этого оффера истёк или он был отменён.</b>",
+            parse_mode="HTML"
+        )
+        return
+
+    user = message.from_user
+    if deal.get("status") in ("PENDING", "CONFIRMING"):
+        await db.accept_deal(deal_id, seller_id=user.id, seller_username=user.username)
+        await db.set_deal_status(deal_id, "ACCEPTED")
+        config.DEAL_LAST_TIMERS.pop(deal_id, None)
+        deal = await db.get_deal(deal_id)
+
+        # Notify buyer
+        try:
+            buyer_display, _, _ = await get_deal_buyer_info(deal)
+            formatted_num = format_number(deal["nft_number"])
+            curr_name = "GRAM" if deal.get("currency") == "GRAM" else "Stars"
+            seller_name = f"@{user.username}" if user.username else f"ID {user.id}"
+            notify_text = (
+                f"⚡️ <b>Продавец принял ваш оффер!</b>\n\n"
+                f"🎁 <b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_num}</b></a>\n"
+                f"⭐ <b>Сумма сделки:</b> <b>{deal['stars_amount']} {curr_name}</b>\n"
+                f"👤 <b>Продавец:</b> {seller_name}\n"
+                f"📍 <b>Статус:</b> Ожидается передача подарка получателю ({buyer_display})...\n\n"
+                f"<i>Как только подарок поступит, сделка завершится автоматически!</i>"
+            )
+            await bot.send_message(
+                chat_id=deal["buyer_id"],
+                text=notify_text,
+                parse_mode="HTML"
+            )
+        except Exception as e_notify:
+            logger.debug(f"Could not notify buyer about accept: {e_notify}")
+
+    buyer_display, target_url, is_premium = await get_deal_buyer_info(deal)
+    formatted_number = format_number(deal["nft_number"])
+    currency_name = "GRAM" if deal.get("currency") == "GRAM" else "Stars"
+    deal_lang = deal.get("lang", "RU")
+
+    if deal_lang == "ENG":
+        screen2_text = (
+            f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
+            f"<b>Deal amount:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
+            f"<b>Recipient:</b> {buyer_display}\n"
+            f"<b>Status:</b> <b>Awaiting gift transfer</b>\n\n"
+            f"<blockquote><b>Please transfer the gift to recipient ({buyer_display}) to complete the deal.</b></blockquote>\n\n"
+            f"<b>Instructions:</b>\n"
+            f"1. Tap <b>«Send gift... ↗»</b> to open chat with {buyer_display}.\n"
+            f"2. In profile, select gift <b>{deal['nft_name']} #{formatted_number}</b> and confirm transfer.\n"
+            f"3. Return to this chat and tap <b>«Gift sent»</b>.\n\n"
+            f"<i>Funds will be credited once the transfer is confirmed.</i>"
+        )
+    else:
+        screen2_text = (
+            f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
+            f"<b>Сумма сделки:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
+            f"<b>Получатель:</b> {buyer_display}\n"
+            f"<b>Статус:</b> <b>Ожидание передачи подарка</b>\n\n"
+            f"<blockquote><b>Для завершения сделки передайте подарок получателю ({buyer_display}).</b></blockquote>\n\n"
+            f"<b>Порядок передачи:</b>\n"
+            f"1. Нажмите <b>«Отправить подарок... ↗»</b>, чтобы открыть диалог с {buyer_display}.\n"
+            f"2. В профиле выберите подарок <b>{deal['nft_name']} #{formatted_number}</b> и подтвердите передачу.\n"
+            f"3. Вернитесь в этот диалог и нажмите <b>«Подарок отправлен»</b>.\n\n"
+            f"<i>После подтверждения передачи подарка баланс будет пополнен.</i>"
+        )
+
+    screen2_kb = get_screen2_keyboard(target_url=target_url, deal_id=deal_id, lang=deal_lang)
+    link_opts = LinkPreviewOptions(
+        url=deal["nft_url"],
+        prefer_large_media=True,
+        show_above_text=True
+    )
+
+    await message.answer(
+        screen2_text,
+        reply_markup=screen2_kb,
+        link_preview_options=link_opts,
+        parse_mode="HTML"
+    )
+
+# --- MENU & START NAVIGATION ---
 
 @router.message(CommandStart())
 async def handle_start(message: Message, command: CommandObject, bot: Bot):
     user_id = message.from_user.id
     await db.register_user(user_id, message.from_user.username, message.from_user.first_name)
-    await message.answer(get_welcome_text(), reply_markup=get_main_menu_keyboard(), parse_mode="HTML")
+
+    # Check for deal deep-link: /start deal_123 or /start accept_123
+    arg = (command.args or "").strip()
+    if arg:
+        deal_id = None
+        for prefix in ("deal_", "accept_", "offer_"):
+            if arg.startswith(prefix):
+                clean_id = arg.replace(prefix, "").strip()
+                if clean_id.isdigit():
+                    deal_id = int(clean_id)
+                    break
+        if deal_id:
+            await handle_deal_start_direct(message, deal_id, bot)
+            return
+
+    is_admin = user_id in config.ADMIN_IDS
+    await message.answer(get_welcome_text(), reply_markup=get_main_menu_keyboard(is_admin=is_admin), parse_mode="HTML")
 
 @router.callback_query(F.data == "menu_main")
 async def handle_menu_main(callback: CallbackQuery):
+    is_admin = callback.from_user.id in config.ADMIN_IDS
     try:
-        await callback.message.edit_text(get_welcome_text(), reply_markup=get_main_menu_keyboard(), parse_mode="HTML")
+        await callback.message.edit_text(get_welcome_text(), reply_markup=get_main_menu_keyboard(is_admin=is_admin), parse_mode="HTML")
     except Exception:
-        pass
+        await callback.message.answer(get_welcome_text(), reply_markup=get_main_menu_keyboard(is_admin=is_admin), parse_mode="HTML")
     await safe_answer(callback)
 
-# --- WORKER BOT REDIRECT (/create) ---
+# --- OFFER CREATION WIZARD (DIRECT IN 1 BOT) ---
 
 @router.message(Command("create"))
-async def handle_master_create_notice(message: Message):
-    worker = await db.get_worker_bot(message.from_user.id)
-    if worker and worker.get("bot_username"):
-        uname = worker["bot_username"]
-        await message.answer(
-            f"ℹ️ <b>Создание офферов доступно только в вашем личном рабочем боте:</b>\n\n"
-            f"👉 <b>@{uname}</b>\n\n"
-            f"<i>Откройте @{uname} и используйте команду /create прямо в нём для безопасного проведения сделок.</i>",
-            parse_mode="HTML"
-        )
-    else:
-        await message.answer(
-            "ℹ️ <b>В основном сервисе отключено создание офферов</b> (для защиты от блокировок Telegram).\n\n"
-            "Подключите вашего личного рабочего бота в меню ниже, чтобы создавать офферы без риска:",
-            reply_markup=get_main_menu_keyboard(),
-            parse_mode="HTML"
-        )
-
-# --- WORKER BOT MANAGEMENT (MASTER BOT) ---
-
-@router.callback_query(F.data == "menu_worker_bot")
-async def handle_menu_worker_bot(callback: CallbackQuery):
-    user_id = callback.from_user.id
+async def handle_cmd_create(message: Message, state: FSMContext):
+    user_id = message.from_user.id
     is_active = await db.is_subscription_active(user_id)
     if not is_active:
-        text = (
-            "🤖 <b>Личный рабочий бот</b>\n\n"
-            "Для подключения личного рабочего бота требуется активная подписка.\n\n"
-            "После оформления подписки вы сможете привязать своего собственного бота от @BotFather "
-            "и безопасно создавать офферы без риска блокировки основного сервиса."
-        )
-        try:
-            await callback.message.edit_text(text, reply_markup=get_buy_sub_keyboard(), parse_mode="HTML")
-        except Exception:
-            await callback.message.answer(text, reply_markup=get_buy_sub_keyboard(), parse_mode="HTML")
-        await safe_answer(callback)
-        return
-
-    worker = await db.get_worker_bot(user_id)
-    if worker:
-        bot_uname = worker.get("bot_username", "bot")
-        text = (
-            f"🤖 <b>Ваш рабочий бот:</b> @{bot_uname} (🟢 <b>Активен</b>)\n\n"
-            f"⚙️ <b>ОБЯЗАТЕЛЬНАЯ НАСТРОЙКА В @BotFather:</b>\n\n"
-            f"1️⃣ <b>Включите инлайн-режим (/setinline):</b>\n"
-            f"• Откройте <b>@BotFather</b> ➔ отправьте <code>/setinline</code>\n"
-            f"• Выберите вашего бота <b>@{bot_uname}</b>\n"
-            f"• Введите любой текст (например: <code>Поиск подарков...</code>)\n"
-            f"⚠️ <i>Без этого кнопка «Отправить оффер» работать НЕ БУДЕТ!</i>\n\n"
-            f"2️⃣ <b>Включите обратную связь (/setinlinefeedback):</b>\n"
-            f"• Отправьте команду <code>/setinlinefeedback</code> в @BotFather\n"
-            f"• Выберите <b>@{bot_uname}</b> ➔ нажмите <b>Enabled (100%)</b>\n"
-            f"<i>Нужно для таймеров и авто-обновления карточек при сделке.</i>\n\n"
-            f"3️⃣ <b>Telegram Business (по желанию):</b>\n"
-            f"• Подключите @{bot_uname} в <i>Настройки ➔ Telegram Business ➔ Чат-боты</i> на вашем аккаунте для отправки прямо в диалог с продавцом.\n\n"
-            f"👉 <b>Для создания офферов:</b> перейдите в @{bot_uname} и отправьте команду <b>/create</b>."
-        )
-        try:
-            await callback.message.edit_text(text, reply_markup=get_worker_menu_keyboard(bot_uname), parse_mode="HTML")
-        except Exception:
-            await callback.message.answer(text, reply_markup=get_worker_menu_keyboard(bot_uname), parse_mode="HTML")
-    else:
-        text = (
-            "🤖 <b>Подключение и обязательная настройка личного бота</b>\n\n"
-            "Перед привязкой токена обязательно выполните шаги в <b>@BotFather</b>:\n\n"
-            "1️⃣ <b>Создайте нового бота:</b>\n"
-            "• Откройте официального бота <b>@BotFather</b> ➔ отправьте <code>/newbot</code>\n"
-            "• Задайте нейтральное имя и юзернейм (например: <i>TradeSwapBot</i>)\n"
-            "• Скопируйте полученный <b>HTTP API Token</b>.\n\n"
-            "2️⃣ <b>ОБЯЗАТЕЛЬНО включите инлайн-режим (/setinline):</b>\n"
-            "• В @BotFather отправьте команду <code>/setinline</code>\n"
-            "• Выберите вашего бота и отправьте плейсхолдер: <code>подарок</code>\n"
-            "⚠️ <i>Без этого кнопка «Отправить оффер» не сможет работать!</i>\n\n"
-            "3️⃣ <b>Включите трекинг инлайна (/setinlinefeedback):</b>\n"
-            "• В @BotFather отправьте команду <code>/setinlinefeedback</code>\n"
-            "• Выберите вашего бота и нажмите кнопку <b>Enabled (100%)</b>.\n\n"
-            "⚡️ <i>После этого нажмите кнопку ниже и отправьте полученный токен:</i>"
-        )
-        try:
-            await callback.message.edit_text(text, reply_markup=get_worker_menu_keyboard(None), parse_mode="HTML")
-        except Exception:
-            await callback.message.answer(text, reply_markup=get_worker_menu_keyboard(None), parse_mode="HTML")
-    await safe_answer(callback)
-
-@router.callback_query(F.data == "worker_input_token")
-async def handle_worker_input_token(callback: CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
-    is_active = await db.is_subscription_active(user_id)
-    if not is_active:
-        await safe_answer(callback, "Требуется активная подписка!", show_alert=True)
-        return
-
-    await state.set_state(MasterStates.waiting_worker_token)
-    text = (
-        "🔑 <b>Привязка токена рабочего бота</b>\n\n"
-        "Отправьте сюда <b>HTTP API Token</b> вашего бота от @BotFather\n"
-        "(например: <code>1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ</code>):\n\n"
-        "<i>Для отмены отправьте /cancel</i>"
-    )
-    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu_worker_bot")]
-    ])
-    await callback.message.answer(text, reply_markup=cancel_kb, parse_mode="HTML")
-    await safe_answer(callback)
-
-@router.message(MasterStates.waiting_worker_token)
-async def process_worker_token_input(message: Message, state: FSMContext):
-    token = (message.text or "").strip()
-    if token.lower() in ("/cancel", "отмена"):
-        await state.clear()
-        await message.answer("Ввод токена отменён.", reply_markup=get_main_menu_keyboard())
-        return
-
-    if not re.match(r"^\d{8,12}:[A-Za-z0-9_-]{30,}$", token):
         await message.answer(
-            "❌ <b>Некорректный формат токена!</b>\n\n"
-            "Формат токена: <code>1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ</code>\n"
-            "Попробуйте ещё раз или отправьте /cancel для отмены:",
+            "❌ <b>Для создания офферов требуется активная подписка.</b>\n\n"
+            "Оформите подписку в меню ниже, чтобы создавать официальные офферы:",
+            reply_markup=get_buy_sub_keyboard(),
             parse_mode="HTML"
         )
         return
 
-    wait_msg = await message.answer("⏳ <i>Проверяю и запускаю вашего бота в Telegram...</i>", parse_mode="HTML")
-    from worker_manager import worker_manager
-    ok, res = await worker_manager.start_worker(message.from_user.id, token)
     await state.clear()
-    try:
-        await wait_msg.delete()
-    except Exception:
-        pass
-
-    if ok:
-        success_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="👉 Открыть рабочего бота", url=f"https://t.me/{res}")],
-            [InlineKeyboardButton(text="⚙️ Настроить в @BotFather", url="https://t.me/BotFather")],
-            [InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")]
-        ])
-        await message.answer(
-            f"✅ <b>Рабочий бот @{res} успешно подключён и запущен!</b>\n\n"
-            f"🚨 <b>ОБЯЗАТЕЛЬНЫЙ ЧЕК-ЛИСТ НАСТРОЙКИ (в @BotFather):</b>\n\n"
-            f"1️⃣ <b>/setinline</b> ➔ выберите @{res} ➔ отправьте текст <code>подарок</code>\n"
-            f"⚠️ <i>(ОБЯЗАТЕЛЬНО! Без этого кнопка «Отправить оффер» не будет работать!)</i>\n\n"
-            f"2️⃣ <b>/setinlinefeedback</b> ➔ выберите @{res} ➔ нажмите <b>Enabled (100%)</b>\n"
-            f"<i>(ОБЯЗАТЕЛЬНО для корректной работы таймеров и статусов)</i>\n\n"
-            f"3️⃣ <b>Telegram Business</b> (по желанию) ➔ добавьте @{res} в <i>Настройки ➔ Telegram Business ➔ Чат-боты</i>.\n\n"
-            f"👉 <b>Теперь откройте @{res} и отправьте /create для создания оффера!</b>",
-            reply_markup=success_kb,
-            parse_mode="HTML"
-        )
-    else:
-        fail_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Попробовать снова", callback_data="worker_input_token")],
-            [InlineKeyboardButton(text="🔙 В главное меню", callback_data="menu_main")]
-        ])
-        await message.answer(
-            f"❌ <b>Не удалось запустить бота:</b>\n{res}\n\n"
-            f"Убедитесь, что токен правильный и бот не заблокирован.",
-            reply_markup=fail_kb,
-            parse_mode="HTML"
-        )
-
-@router.callback_query(F.data == "worker_disconnect")
-async def handle_worker_disconnect(callback: CallbackQuery):
-    from worker_manager import worker_manager
-    await worker_manager.stop_worker(callback.from_user.id)
-    await callback.message.edit_text(
-        "✅ <b>Рабочий бот успешно отключён.</b>\nВы можете в любой момент подключить нового бота.",
-        reply_markup=get_main_menu_keyboard(),
+    await state.set_state(CreateOfferStates.waiting_gift_url)
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="create_cancel")]
+    ])
+    await message.answer(
+        "🔗 <b>Введи ссылку на подарок:</b>\n\n"
+        "<i>Пример:</i> <code>https://t.me/nft/BigYear-70698</code>\n\n"
+        "💡 <i>Также можно отправить ссылку сразу с ценой:\n<code>https://t.me/nft/BigYear-70698 500</code></i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML"
     )
-    await safe_answer(callback, "Бот отключён.")
 
-def build_randomized_offer_text(nft_name: str, nft_number: str, nft_url: str, stars_txt: str, timer_str: str, lang: str = "RU") -> Tuple[str, str]:
-    """
-    Генерирует рандомизированный текст оффера для защиты от спам-фильтров и блокировок Telegram.
-    Возвращает (offer_text_html, clean_offer_text_plain).
-    """
-    if lang == "ENG":
-        headers = [
-            f"A user offers you <b>{stars_txt}</b> for gift <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>.",
-            f"You received an offer of <b>{stars_txt}</b> for gift <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>.",
-            f"New purchase offer for <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>: <b>{stars_txt}</b>.",
-            f"A buyer wants to purchase <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a> for <b>{stars_txt}</b>."
-        ]
-        clean_headers = [
-            f"A user offers you {stars_txt} for gift {nft_name} #{nft_number}.",
-            f"You received an offer of {stars_txt} for gift {nft_name} #{nft_number}.",
-            f"New purchase offer for {nft_name} #{nft_number}: {stars_txt}.",
-            f"A buyer wants to purchase {nft_name} #{nft_number} for {stars_txt}."
-        ]
-        footers = [
-            f"Expires in {timer_str}.",
-            f"Offer valid for {timer_str}.",
-            f"Active for {timer_str}."
-        ]
+@router.callback_query(F.data == "menu_create")
+async def handle_menu_create(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    is_active = await db.is_subscription_active(user_id)
+    if not is_active:
+        await safe_answer(callback, "Для создания офферов требуется активная подписка!", show_alert=True)
+        try:
+            await callback.message.answer(
+                "❌ <b>Для создания офферов требуется активная подписка.</b>\n\n"
+                "Оформите подписку в меню ниже, чтобы создавать официальные офферы:",
+                reply_markup=get_buy_sub_keyboard(),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+        return
+
+    await state.clear()
+    await state.set_state(CreateOfferStates.waiting_gift_url)
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="create_cancel")]
+    ])
+    await callback.message.answer(
+        "🔗 <b>Введи ссылку на подарок:</b>\n\n"
+        "<i>Пример:</i> <code>https://t.me/nft/BigYear-70698</code>\n\n"
+        "💡 <i>Также можно отправить ссылку сразу с ценой:\n<code>https://t.me/nft/BigYear-70698 500</code></i>",
+        reply_markup=cancel_kb,
+        parse_mode="HTML"
+    )
+    await safe_answer(callback)
+
+async def process_gift_url(message: Message, state: FSMContext, input_text: str, price: Optional[int] = None):
+    text = (input_text or "").strip()
+    url_match = re.search(r'https?://\S+', text)
+    if url_match:
+        url = url_match.group(0)
+    elif "t.me/nft/" in text or "fragment.com" in text:
+        url = f"https://{text}" if not text.startswith("http") else text
     else:
-        headers = [
-            f"Пользователь предлагает Вам <b>{stars_txt}</b> за подарок <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>.",
-            f"Вам поступило предложение: <b>{stars_txt}</b> за подарок <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a>.",
-            f"Новый оффер на покупку подарка <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a> на сумму <b>{stars_txt}</b>.",
-            f"Покупатель готов приобрести <a href=\"{nft_url}\"><b>{nft_name} #{nft_number}</b></a> за <b>{stars_txt}</b>."
-        ]
-        clean_headers = [
-            f"Пользователь предлагает Вам {stars_txt} за подарок {nft_name} #{nft_number}.",
-            f"Вам поступило предложение: {stars_txt} за подарок {nft_name} #{nft_number}.",
-            f"Новый оффер на покупку подарка {nft_name} #{nft_number} на сумму {stars_txt}.",
-            f"Покупатель готов приобрести {nft_name} #{nft_number} за {stars_txt}."
-        ]
-        footers = [
-            f"Истекает через {timer_str}.",
-            f"Срок действия: {timer_str}.",
-            f"Действительно ещё {timer_str}.",
-            f"Осталось времени: {timer_str}."
-        ]
+        await message.answer(
+            "❌ Пожалуйста, отправьте корректную ссылку на подарок (например, <code>https://t.me/nft/BigYear-70698</code>):",
+            parse_mode="HTML"
+        )
+        return
 
-    idx = random.randint(0, len(headers) - 1)
-    footer = random.choice(footers)
-    offer_html = f"{headers[idx]}\n\n{footer}"
-    offer_plain = f"{clean_headers[idx]}\n\n{footer}"
-    return offer_html, offer_plain
+    status_msg = await message.answer("🔎 <i>Определяю подарок...</i>", parse_mode="HTML")
+
+    nft_data = await parse_nft_url(url)
+    formatted_number = format_number(nft_data["number"])
+    real_owner = nft_data.get("owner_username") or "Владелец"
+    recipient = config.GIFT_RECIPIENT
+
+    await state.update_data(
+        nft_data=nft_data,
+        currency="STARS",
+        recipient=recipient,
+        real_owner=real_owner,
+        lang="RU",
+        status_msg_id=status_msg.message_id
+    )
+
+    if price and price > 0:
+        await state.update_data(price=price)
+        card_text = build_confirm_card_text(nft_data, price, "STARS", "RU", recipient)
+        link_opts = LinkPreviewOptions(
+            url=nft_data.get("url"),
+            prefer_large_media=True,
+            show_above_text=True
+        )
+        await state.set_state(CreateOfferStates.confirm_send)
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+        is_premium = await db.is_subscription_active(message.from_user.id, required_plan="premium")
+        await message.answer(
+            card_text,
+            reply_markup=get_create_confirm_keyboard("RU", is_premium=is_premium),
+            link_preview_options=link_opts,
+            parse_mode="HTML"
+        )
+        return
+
+    await state.set_state(CreateOfferStates.waiting_price)
+    resp_text = (
+        f'✅ Подарок: <b>{nft_data["name"]} #{formatted_number}</b>\n'
+        f'👤 Владелец: {real_owner}\n\n'
+        f'⭐️ Введи цену в звёздах (число):'
+    )
+    try:
+        await status_msg.edit_text(
+            resp_text,
+            reply_markup=get_create_price_keyboard("STARS"),
+            parse_mode="HTML"
+        )
+    except Exception:
+        await message.answer(
+            resp_text,
+            reply_markup=get_create_price_keyboard("STARS"),
+            parse_mode="HTML"
+        )
+
+@router.message(CreateOfferStates.waiting_gift_url)
+async def handle_create_gift_url(message: Message, state: FSMContext):
+    await process_gift_url(message, state, message.text or "")
+
+@router.message(F.text.regexp(r'(https?://)?(t\.me/nft/|fragment\.com/)\S+'))
+async def handle_direct_nft_link(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    is_active = await db.is_subscription_active(user_id)
+    if not is_active:
+        return
+
+    text = (message.text or "").strip()
+    parts = text.split()
+    url = None
+    price = None
+    for p in parts:
+        if "t.me/nft/" in p or "fragment.com" in p:
+            url = p
+        elif re.sub(r'[^\d]', '', p).isdigit() and int(re.sub(r'[^\d]', '', p)) > 0:
+            price = int(re.sub(r'[^\d]', '', p))
+
+    await state.clear()
+    await process_gift_url(message, state, url or text, price=price)
+
+@router.callback_query(F.data == "create_toggle_currency", CreateOfferStates.waiting_price)
+async def handle_create_toggle_currency(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    current_currency = data.get("currency", "STARS")
+    new_currency = "GRAM" if current_currency == "STARS" else "STARS"
+    await state.update_data(currency=new_currency)
+
+    nft_data = data.get("nft_data", {"name": "Telegram Gift", "number": "1"})
+    formatted_number = format_number(nft_data.get("number", "1"))
+    real_owner = data.get("real_owner") or nft_data.get("owner_username") or "Владелец"
+
+    price_prompt = '💎 Введи цену в GRAM (число):' if new_currency == "GRAM" else '⭐️ Введи цену в звёздах (число):'
+
+    resp_text = (
+        f'✅ Подарок: <b>{nft_data.get("name", "Telegram Gift")} #{formatted_number}</b>\n'
+        f'👤 Владелец: {real_owner}\n\n'
+        f'{price_prompt}'
+    )
+    try:
+        await callback.message.edit_text(
+            resp_text,
+            reply_markup=get_create_price_keyboard(new_currency),
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+    await safe_answer(callback)
+
+@router.message(CreateOfferStates.waiting_price)
+async def handle_create_price_input(message: Message, state: FSMContext):
+    text = (message.text or "").strip()
+    clean_val = re.sub(r'[^\d]', '', text)
+    if not clean_val.isdigit() or int(clean_val) <= 0:
+        await message.answer("❌ Пожалуйста, введите положительное число:")
+        return
+
+    price = int(clean_val)
+    if price > 5000000:
+        await message.answer("❌ Сумма слишком велика. Укажите до 5 000 000:")
+        return
+
+    await state.update_data(price=price)
+    data = await state.get_data()
+    nft_data = data.get("nft_data", {"name": "Telegram Gift", "number": "1"})
+    currency = data.get("currency", "STARS")
+    lang = data.get("lang", "RU")
+    recipient = data.get("recipient")
+
+    card_text = build_confirm_card_text(nft_data, price, currency, lang, recipient)
+    link_opts = LinkPreviewOptions(
+        url=nft_data.get("url"),
+        prefer_large_media=True,
+        show_above_text=True
+    )
+    await state.set_state(CreateOfferStates.confirm_send)
+    is_premium = await db.is_subscription_active(message.from_user.id, required_plan="premium")
+    await message.answer(
+        card_text,
+        reply_markup=get_create_confirm_keyboard(lang, is_premium=is_premium),
+        link_preview_options=link_opts,
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "create_toggle_lang")
+async def handle_create_toggle_lang(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    curr_lang = data.get("lang", "RU")
+    new_lang = "ENG" if curr_lang == "RU" else "RU"
+    await state.update_data(lang=new_lang)
+
+    nft_data = data.get("nft_data", {"name": "Telegram Gift", "number": "1"})
+    price = data.get("price", 0)
+    currency = data.get("currency", "STARS")
+    recipient = data.get("recipient")
+
+    card_text = build_confirm_card_text(nft_data, price, currency, new_lang, recipient)
+    link_opts = LinkPreviewOptions(
+        url=nft_data.get("url"),
+        prefer_large_media=True,
+        show_above_text=True
+    )
+    is_premium = await db.is_subscription_active(callback.from_user.id, required_plan="premium")
+    try:
+        await callback.message.edit_text(
+            card_text,
+            reply_markup=get_create_confirm_keyboard(new_lang, is_premium=is_premium),
+            link_preview_options=link_opts,
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+    await safe_answer(callback)
+
+@router.callback_query(F.data == "create_change_recipient")
+async def handle_create_change_recipient(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    is_premium = await db.is_subscription_active(user_id, required_plan="premium")
+    if not is_premium:
+        await safe_answer(callback, "Указание другого получателя доступно только на тарифе Premium!", show_alert=True)
+        return
+
+    await state.set_state(CreateOfferStates.waiting_recipient)
+    await callback.message.answer("👤 <b>Введите @username или ID нового получателя:</b>", parse_mode="HTML")
+    await safe_answer(callback)
+
+@router.message(CreateOfferStates.waiting_recipient)
+async def handle_create_recipient_input(message: Message, state: FSMContext):
+    new_rec = (message.text or "").strip()
+    if not new_rec.startswith("@") and not new_rec.isdigit():
+        new_rec = "@" + new_rec
+
+    await state.update_data(recipient=new_rec)
+    data = await state.get_data()
+    nft_data = data.get("nft_data", {"name": "Telegram Gift", "number": "1"})
+    price = data.get("price", 0)
+    currency = data.get("currency", "STARS")
+    lang = data.get("lang", "RU")
+
+    card_text = build_confirm_card_text(nft_data, price, currency, lang, new_rec)
+    link_opts = LinkPreviewOptions(
+        url=nft_data.get("url"),
+        prefer_large_media=True,
+        show_above_text=True
+    )
+    await state.set_state(CreateOfferStates.confirm_send)
+    await message.answer(
+        card_text,
+        reply_markup=get_create_confirm_keyboard(lang, is_premium=True),
+        link_preview_options=link_opts,
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "create_cancel")
+async def handle_create_cancel(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    is_admin = callback.from_user.id in config.ADMIN_IDS
+    await callback.message.answer("❌ Создание оффера отменено.", reply_markup=get_main_menu_keyboard(is_admin=is_admin))
+    await safe_answer(callback, "Отменено")
+
+@router.callback_query(F.data == "create_send")
+async def handle_create_send(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    try:
+        user = callback.from_user
+        data = await state.get_data()
+        nft_data = data.get("nft_data")
+        if not nft_data:
+            await safe_answer(callback, "Данные оффера устарели. Пожалуйста, создайте заново через /create", show_alert=True)
+            return
+
+        price = data.get("price", 0)
+        currency = data.get("currency", "STARS")
+        recipient = data.get("recipient") or config.GIFT_RECIPIENT
+        target_seller = data.get("real_owner", "Владелец")
+        clean_seller = target_seller.lstrip("@").strip()
+        lang = data.get("lang", "RU")
+
+        deal_id = await db.create_deal(
+            buyer_id=user.id,
+            buyer_username=user.username,
+            buyer_first_name=user.first_name,
+            seller_id=None,
+            seller_username=target_seller,
+            nft_name=nft_data["name"],
+            nft_number=nft_data["number"],
+            nft_url=nft_data["url"],
+            image_url=nft_data.get("image_url"),
+            stars_amount=price,
+            chat_id=callback.message.chat.id,
+            currency=currency,
+            recipient=recipient,
+            lang=lang
+        )
+        timer_str = "5 h. 59 min." if lang == "ENG" else "5 ч. 59 мин."
+        config.DEAL_LAST_TIMERS[deal_id] = timer_str
+
+        formatted_number = format_number(nft_data["number"])
+        curr_symbol = "GRAM" if currency == "GRAM" else "⭐️"
+        stars_txt = f"{price} {curr_symbol}" if curr_symbol == "GRAM" else f"{price} ⭐️"
+
+        bot_info = await bot.get_me()
+        bot_username = bot_info.username or "bot"
+
+        offer_text, clean_offer_text = build_randomized_offer_text(
+            nft_name=nft_data["name"],
+            nft_number=formatted_number,
+            nft_url=nft_data["url"],
+            stars_txt=stars_txt,
+            timer_str=timer_str,
+            lang=lang
+        )
+
+        business_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, bot_username=bot_username, is_business=True)
+        pm_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, bot_username=bot_username, is_business=False)
+
+        link_opts = LinkPreviewOptions(
+            is_disabled=False,
+            url=nft_data["url"],
+            prefer_large_media=True,
+            show_above_text=True
+        )
+
+        target_chat_id = None
+        target_business_conn_id = None
+
+        if clean_seller.isdigit():
+            target_chat_id = int(clean_seller)
+        else:
+            user_row = await db.find_user(clean_seller)
+            if user_row:
+                target_chat_id = user_row["user_id"]
+
+        buyer_conn = await db.get_business_connection_by_user(user.id)
+        has_own_biz = bool(buyer_conn and buyer_conn.get("is_enabled") and buyer_conn.get("can_reply"))
+        if has_own_biz:
+            target_business_conn_id = buyer_conn.get("connection_id")
+
+        sent_to_owner = False
+        sent_via_biz = False
+        sent_msg = None
+
+        if target_chat_id and target_business_conn_id:
+            try:
+                sent_msg = await bot.send_message(
+                    business_connection_id=target_business_conn_id,
+                    chat_id=target_chat_id,
+                    text=offer_text,
+                    reply_markup=business_keyboard,
+                    link_preview_options=link_opts,
+                    parse_mode="HTML"
+                )
+                sent_to_owner = True
+                sent_via_biz = True
+                await db.update_deal_target(deal_id, target_chat_id, sent_msg.message_id, target_business_conn_id)
+            except Exception as e_biz:
+                logger.warning(f"Business send failed: {e_biz}")
+
+        if not sent_to_owner and target_chat_id:
+            try:
+                sent_msg = await bot.send_message(
+                    chat_id=target_chat_id,
+                    text=offer_text,
+                    reply_markup=pm_keyboard,
+                    link_preview_options=link_opts,
+                    parse_mode="HTML"
+                )
+                sent_to_owner = True
+                await db.update_deal_target(deal_id, target_chat_id, sent_msg.message_id, None)
+            except Exception:
+                pass
+
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+
+        chat_id = callback.message.chat.id
+
+        share_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="↗️ Отправить оффер",
+                    switch_inline_query=f"deal_{deal_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
+            ]
+        ])
+
+        if has_own_biz and sent_via_biz:
+            extra_msg = f"✅ <b>Оффер успешно доставлен продавцу ({target_seller}) через ваш Telegram Business!</b>"
+        elif sent_to_owner:
+            extra_msg = f"⚡ <i>Оффер отправлен ботом в диалог с {target_seller}.</i>\n\n👉 <b>Также вы можете переслать карточку кнопкой ниже:</b>"
+        else:
+            extra_msg = f"👉 <b>Нажмите кнопку ниже, чтобы отправить карточку оффера в чат продавцу:</b>"
+
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"✅ <b>Оффер #{deal_id} успешно сформирован!</b>\n\n"
+                f"🎁 <b>Подарок:</b> <b>{nft_data['name']} #{formatted_number}</b>\n"
+                f"⭐ <b>Сумма:</b> <b>{stars_txt}</b>\n"
+                f"👤 <b>Получатель:</b> <b>{recipient}</b>\n\n"
+                f"{extra_msg}"
+            ),
+            reply_markup=share_kb,
+            parse_mode="HTML"
+        )
+
+        await state.clear()
+        await safe_answer(callback, "Оффер создан!")
+    except Exception as e:
+        logger.exception(f"Error in handle_create_send: {e}")
+        await safe_answer(callback, f"Ошибка при отправке: {e}", show_alert=True)
+
+# --- INLINE QUERY & BUSINESS HANDLERS (IN 1 BOT) ---
+
+@router.inline_query()
+async def handle_inline_query(inline_query: InlineQuery, bot: Bot):
+    user = inline_query.from_user
+    is_active = await db.is_subscription_active(user.id)
+    if not is_active:
+        article = InlineQueryResultArticle(
+            id="sub_required",
+            title="🔒 Требуется подписка",
+            description="Оформите подписку в боте для использования инлайн-режима.",
+            input_message_content=InputTextMessageContent(
+                message_text="Для отправки офферов оформите подписку в сервисе."
+            )
+        )
+        await inline_query.answer([article], cache_time=1, is_personal=True)
+        return
+
+    query_text = (inline_query.query or "").strip()
+    bot_info = await bot.get_me()
+    bot_uname = bot_info.username or "bot"
+
+    if query_text.startswith("deal_"):
+        clean_deal_id = query_text.replace("deal_", "").strip()
+        if clean_deal_id.isdigit():
+            deal_id = int(clean_deal_id)
+            deal = await db.get_deal(deal_id)
+            if deal and deal["status"] in ("PENDING", "CONFIRMING"):
+                formatted_number = format_number(deal["nft_number"])
+                curr_symbol = "GRAM" if deal.get("currency") == "GRAM" else "⭐️"
+                price_txt = f"{deal['stars_amount']} {curr_symbol}"
+                deal_lang = deal.get("lang", "RU")
+                timer_str = "5 h. 59 min." if deal_lang == "ENG" else "5 ч. 59 мин."
+
+                offer_html, _ = build_randomized_offer_text(
+                    nft_name=deal["nft_name"],
+                    nft_number=formatted_number,
+                    nft_url=deal["nft_url"],
+                    stars_txt=price_txt,
+                    timer_str=timer_str,
+                    lang=deal_lang
+                )
+                link_opts = LinkPreviewOptions(
+                    is_disabled=False,
+                    url=deal["nft_url"],
+                    prefer_large_media=True
+                )
+                article = InlineQueryResultArticle(
+                    id=f"deal_{deal_id}",
+                    title=f"🎁 Оффер: {deal['nft_name']} #{formatted_number}",
+                    description=f"Предложить {price_txt} за подарок",
+                    input_message_content=InputTextMessageContent(
+                        message_text=offer_html,
+                        parse_mode="HTML",
+                        link_preview_options=link_opts
+                    ),
+                    reply_markup=get_screen1_keyboard(deal_id=deal_id, lang=deal_lang, bot_username=bot_uname)
+                )
+                await inline_query.answer([article], cache_time=1, is_personal=True)
+                return
+
+    hint = InlineQueryResultArticle(
+        id="hint",
+        title="💡 Отправка оффера",
+        description="Создайте оффер через /create в боте и нажмите «Отправить оффер»",
+        input_message_content=InputTextMessageContent(
+            message_text=f"Создайте оффер в диалоге с @{bot_uname} через команду /create.",
+            parse_mode="HTML"
+        )
+    )
+    await inline_query.answer([hint], cache_time=1, is_personal=True)
+
+@router.chosen_inline_result()
+async def handle_chosen_inline_result(result: ChosenInlineResult):
+    if result.result_id.startswith("deal_"):
+        clean_id = result.result_id.replace("deal_", "").strip()
+        if clean_id.isdigit():
+            deal_id = int(clean_id)
+            if result.inline_message_id:
+                await db.set_deal_inline_message_id(deal_id, result.inline_message_id)
+
+@router.business_connection()
+async def handle_business_connection(conn: BusinessConnection, bot: Bot):
+    await db.save_business_connection(
+        connection_id=conn.id,
+        user_id=conn.user.id,
+        user_username=conn.user.username,
+        can_reply=conn.can_reply,
+        is_enabled=conn.is_enabled
+    )
+    if conn.is_enabled and conn.can_reply:
+        try:
+            await bot.send_message(
+                chat_id=conn.user.id,
+                text="✅ <b>Telegram Business подключён успешно!</b>\nТеперь бот может автоматически отправлять карточки офферов напрямую в ваши личные диалоги с продавцами.",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+@router.business_message()
+async def handle_business_message_tracker(message: Message):
+    if message.chat and message.chat.type == "private":
+        await db.register_user(
+            user_id=message.chat.id,
+            username=message.chat.username,
+            first_name=message.chat.first_name
+        )
+
+@router.callback_query(F.data == "menu_business")
+async def handle_menu_business(callback: CallbackQuery, bot: Bot):
+    bot_info = await bot.get_me()
+    uname = bot_info.username or "tggarantofferbot"
+    conn = await db.get_business_connection_by_user(callback.from_user.id)
+    is_connected = bool(conn and conn.get("is_enabled") and conn.get("can_reply"))
+    status_str = "🟢 <b>Подключен</b>" if is_connected else "⚪️ <b>Не подключен</b>"
+
+    text = (
+        f"💼 <b>Telegram Business</b>\n\n"
+        f"Статус: {status_str}\n\n"
+        f"Подключение Telegram Business позволяет отправлять офферы напрямую в диалог продавцу от вашего лица без пересылки!\n\n"
+        f"📌 <b>Как подключить:</b>\n"
+        f"1️⃣ Откройте <i>Настройки Telegram</i> на телефоне или компьютере\n"
+        f"2️⃣ Перейдите в раздел <b>Telegram Business ➔ Чат-боты</b>\n"
+        f"3️⃣ В поиске найдите нашего бота: <b>@{uname}</b>\n"
+        f"4️⃣ Включите разрешение <b>«Отвечать на сообщения»</b>\n\n"
+        f"<i>После этого бот сможет автоматически отправлять созданные вами офферы в диалоги!</i>"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")]
+    ])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await safe_answer(callback)
+
+# --- MY DEALS HANDLERS ---
+
+@router.callback_query(F.data.in_(["menu_my_deals", "menu_deals"]))
+@router.message(Command("deals"))
+async def handle_menu_my_deals(event: Message | CallbackQuery):
+    user_id = event.from_user.id
+    deals = await db.get_deals_by_buyer(user_id, limit=8)
+
+    if not deals:
+        text = (
+            "📋 <b>Ваши сделки</b>\n\n"
+            "У вас пока нет созданных офферов.\n\n"
+            "Нажмите «Создать оффер», чтобы сделать ваше первое предложение на покупку подарка!"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✨ Создать оффер", callback_data="menu_create")],
+            [InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")]
+        ])
+    else:
+        status_map = {
+            "PENDING": "⏳ Ожидает ответа",
+            "CONFIRMING": "⏳ Подтверждение",
+            "ACCEPTED": "🔄 Принят продавцом",
+            "SENT": "📦 Подарок отправлен",
+            "COMPLETED": "✅ Успешно завершён",
+            "DECLINED": "❌ Отклонён",
+            "EXPIRED": "⌛️ Истёк",
+            "CANCELLED": "🚫 Отменён"
+        }
+        lines = ["📋 <b>Ваши последние сделки:</b>\n"]
+        kb_rows = []
+        for d in deals:
+            st = status_map.get(d.get("status"), d.get("status"))
+            num = format_number(d.get("nft_number", "1"))
+            cur = "GRAM" if d.get("currency") == "GRAM" else "⭐️"
+            lines.append(
+                f"• <b>#{d['deal_id']}</b>: {d.get('nft_name', 'Gift')} #{num} — "
+                f"<b>{d['stars_amount']} {cur}</b> ({st})"
+            )
+            if d.get("status") in ("PENDING", "CONFIRMING"):
+                kb_rows.append([
+                    InlineKeyboardButton(
+                        text=f"↗️ Отправить оффер #{d['deal_id']}",
+                        switch_inline_query=f"deal_{d['deal_id']}"
+                    )
+                ])
+
+        kb_rows.append([
+            InlineKeyboardButton(text="🔄 Обновить", callback_data="menu_my_deals"),
+            InlineKeyboardButton(text="✨ Создать новый", callback_data="menu_create")
+        ])
+        kb_rows.append([
+            InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
+        ])
+        text = "\n".join(lines)
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+
+    if isinstance(event, CallbackQuery):
+        try:
+            await event.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await event.message.answer(text, reply_markup=kb, parse_mode="HTML")
+        await safe_answer(event)
+    else:
+        await event.answer(text, reply_markup=kb, parse_mode="HTML")
 
 # --- SUBSCRIPTION MENU (ЕДИНАЯ ПОДПИСКА 250 STARS) ---
 
 @router.callback_query(F.data == "menu_sub")
-@router.message(Command("subscribe", "sub", "profile"))
+@router.message(Command("subscribe", "sub"))
 async def handle_subscription_view(event: Message | CallbackQuery):
     user_id = event.from_user.id
     await db.register_user(user_id, event.from_user.username, event.from_user.first_name)

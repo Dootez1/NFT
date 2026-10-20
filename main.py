@@ -222,18 +222,18 @@ async def main():
         sys.exit(1)
 
     if getattr(config, "DEAL_BOT_TOKEN", None) and config.DEAL_BOT_TOKEN != config.BOT_TOKEN:
-        logger.info("Initializing dedicated deal bot from config...")
+        logger.info(f"Запуск бота проведения сделок (@{config.DEAL_BOT_USERNAME})...")
         ok, res = await worker_manager.start_deal_bot(config.DEAL_BOT_TOKEN)
         if ok:
-            logger.info(f"Dedicated deal bot connected: @{res}")
+            logger.info(f"Бот проведения сделок успешно подключен и слушает обновления: @{res}")
         else:
-            logger.warning(f"Could not connect dedicated deal bot ({res}). Falling back to main bot @{config.MAIN_BOT_USERNAME}.")
+            logger.warning(f"Не удалось подключить бота сделок ({res}). Фолбэк на @{config.MAIN_BOT_USERNAME}.")
             config.DEAL_BOT_ID = bot_info.id
             config.DEAL_BOT_USERNAME = config.MAIN_BOT_USERNAME
     else:
         config.DEAL_BOT_ID = bot_info.id
         config.DEAL_BOT_USERNAME = config.MAIN_BOT_USERNAME
-        logger.info(f"Режим работы: Single-Bot (все функции и сделки ведёт @{config.MAIN_BOT_USERNAME}).")
+    logger.info(f"Основной бот: @{config.MAIN_BOT_USERNAME} | Бот проведения сделок: @{config.DEAL_BOT_USERNAME}")
 
     dp = Dispatcher()
 
@@ -265,10 +265,6 @@ async def main():
     dp.include_router(admin_router)
     dp.include_router(router)
 
-    # Start all subscriber worker bots restored from database
-    logger.info("Initializing subscriber worker bots...")
-    asyncio.create_task(worker_manager.start_all_from_db())
-
     # Run background workers
     timer_task = asyncio.create_task(countdown_timer_worker(bot))
     checker_task = asyncio.create_task(expiration_checker(bot))
@@ -276,7 +272,7 @@ async def main():
     star_gifts_task = asyncio.create_task(star_gifts_background_checker(bot))
     web_task = asyncio.create_task(start_web_server())
 
-    logger.info("Starting Master bot polling with Anti-DDoS & Worker Manager...")
+    logger.info("Starting Single Bot polling with Anti-DDoS...")
     try:
         await dp.start_polling(
             bot,

@@ -17,7 +17,7 @@ def get_screen1_keyboard(deal_id: int, lang: str = "RU", bot_username: str | Non
     deal_bot = (
         (getattr(config, "DEAL_BOT_USERNAME", None) or "").strip().lstrip("@")
         or (bot_username or "").strip().lstrip("@")
-        or "hjchasdbot"
+        or "TradeOfbotick_and_bot"
     )
 
     return InlineKeyboardMarkup(inline_keyboard=[

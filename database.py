@@ -131,6 +131,11 @@ async def init_db():
         except Exception:
             pass
 
+        try:
+            await db.execute("ALTER TABLE authorized_users ADD COLUMN link_code TEXT;")
+        except Exception:
+            pass
+
         # Performance Indexes for High Scale (100,000+ bots & deals)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_deals_status_expires ON deals(status, expires_at);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_deals_buyer ON deals(buyer_id);")
@@ -781,21 +786,42 @@ async def get_access_link(code: str) -> Optional[Dict[str, Any]]:
             row = await cur.fetchone()
             return dict(row) if row else None
 
-async def use_access_link(code: str, user_id: int, username: str = None, first_name: str = None) -> bool:
+async def use_access_link(code: str, user_id: int, username: str = None, first_name: str = None) -> tuple[bool, bool]:
+    """
+    Применяет ссылку доступа для пользователя.
+    Возвращает (success, is_new_user).
+    Если пользователь уже был авторизован, uses_count НЕ увеличивается.
+    """
     async with get_db() as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT code, created_by FROM access_links WHERE code = ?", (code,)) as cur:
             row = await cur.fetchone()
             if not row:
-                return False
+                return False, False
             invited_by = row["created_by"]
-        await db.execute("UPDATE access_links SET uses_count = uses_count + 1 WHERE code = ?", (code,))
-        await db.execute("""
-            INSERT OR REPLACE INTO authorized_users (user_id, username, first_name, invited_by)
-            VALUES (?, ?, ?, ?)
-        """, (user_id, username, first_name, invited_by))
-        await db.commit()
-    return True
+
+        # Проверяем, был ли пользователь уже авторизован ранее
+        async with db.execute("SELECT user_id FROM authorized_users WHERE user_id = ?", (user_id,)) as cur:
+            already_auth = (await cur.fetchone()) is not None
+
+        if not already_auth:
+            # Новый уникальный пользователь - увеличиваем счётчик
+            await db.execute("UPDATE access_links SET uses_count = uses_count + 1 WHERE code = ?", (code,))
+            await db.execute("""
+                INSERT OR REPLACE INTO authorized_users (user_id, username, first_name, invited_by, link_code)
+                VALUES (?, ?, ?, ?, ?)
+            """, (user_id, username, first_name, invited_by, code))
+            await db.commit()
+            return True, True
+        else:
+            # Пользователь уже переходил ранее - счётчик НЕ прибавляем
+            await db.execute("""
+                UPDATE authorized_users 
+                SET username = COALESCE(?, username), first_name = COALESCE(?, first_name)
+                WHERE user_id = ?
+            """, (username, first_name, user_id))
+            await db.commit()
+            return True, False
 
 async def get_all_access_links() -> List[Dict[str, Any]]:
     async with get_db() as db:

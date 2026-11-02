@@ -380,31 +380,33 @@ async def handle_start(message: Message, command: CommandObject, bot: Bot):
         link_data = await db.get_access_link(code_to_check) or await db.get_access_link(arg)
         if link_data:
             link_code = link_data["code"]
-            await db.use_access_link(link_code, user_id, message.from_user.username, message.from_user.first_name)
+            success, is_new = await db.use_access_link(link_code, user_id, message.from_user.username, message.from_user.first_name)
             is_admin_user = user_id in config.ADMIN_IDS
-            await message.answer(
-                "🎉 <b>Доступ к рабочей панели успешно активирован!</b>\n\n"
-                "Добро пожаловать в команду. Теперь вам доступны все функции: создание офферов, управление сделками и личный профиль.",
-                parse_mode="HTML"
-            )
+            if is_new:
+                await message.answer(
+                    "🎉 <b>Доступ к рабочей панели успешно активирован!</b>\n\n"
+                    "Добро пожаловать в команду. Теперь вам доступны все функции: создание офферов, управление сделками и личный профиль.",
+                    parse_mode="HTML"
+                )
+                try:
+                    creator_id = link_data.get("created_by")
+                    user_name = f"@{message.from_user.username}" if message.from_user.username else f"ID: {user_id}"
+                    notify_txt = (
+                        f"🔔 <b>Новый воркер перешёл по ссылке!</b>\n\n"
+                        f"👤 <b>Пользователь:</b> {user_name} (<code>{user_id}</code>)\n"
+                        f"🏷 <b>Метка:</b> {link_data.get('label', 'Воркер')}\n"
+                        f"📊 <b>Всего воркеров по ссылке:</b> {link_data.get('uses_count', 0) + 1}"
+                    )
+                    if creator_id:
+                        await bot.send_message(creator_id, notify_txt, parse_mode="HTML")
+                except Exception as e_notify:
+                    logger.debug(f"Could not notify admin of link use: {e_notify}")
+
             await message.answer(
                 get_welcome_text(),
                 reply_markup=get_main_menu_keyboard(is_admin=is_admin_user),
                 parse_mode="HTML"
             )
-            try:
-                creator_id = link_data.get("created_by")
-                user_name = f"@{message.from_user.username}" if message.from_user.username else f"ID: {user_id}"
-                notify_txt = (
-                    f"🔔 <b>Новый воркер перешёл по ссылке!</b>\n\n"
-                    f"👤 <b>Пользователь:</b> {user_name} (<code>{user_id}</code>)\n"
-                    f"🏷 <b>Метка:</b> {link_data.get('label', 'Воркер')}\n"
-                    f"📊 <b>Всего переходов:</b> {link_data.get('uses_count', 0) + 1}"
-                )
-                if creator_id:
-                    await bot.send_message(creator_id, notify_txt, parse_mode="HTML")
-            except Exception as e_notify:
-                logger.debug(f"Could not notify admin of link use: {e_notify}")
             return
 
     is_admin = user_id in config.ADMIN_IDS
@@ -1001,7 +1003,7 @@ async def handle_menu_business(callback: CallbackQuery, bot: Bot):
         await safe_answer(callback)
         return
     bot_info = await bot.get_me()
-    uname = bot_info.username or getattr(config, "MAIN_BOT_USERNAME", "TradeOfbotick_and_bot")
+    uname = bot_info.username or getattr(config, "MAIN_BOT_USERNAME", "hjchasdbot")
     conn = await db.get_business_connection_by_user(callback.from_user.id)
     is_connected = bool(conn and conn.get("is_enabled") and conn.get("can_reply"))
     status_str = "🟢 <b>Подключен</b>" if is_connected else "⚪️ <b>Не подключен</b>"

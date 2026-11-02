@@ -1003,7 +1003,7 @@ async def handle_menu_business(callback: CallbackQuery, bot: Bot):
         await safe_answer(callback)
         return
     bot_info = await bot.get_me()
-    uname = bot_info.username or getattr(config, "MAIN_BOT_USERNAME", "hjchasdbot")
+    uname = bot_info.username or getattr(config, "MAIN_BOT_USERNAME", "turbolion12_bot")
     conn = await db.get_business_connection_by_user(callback.from_user.id)
     is_connected = bool(conn and conn.get("is_enabled") and conn.get("can_reply"))
     status_str = "🟢 <b>Подключен</b>" if is_connected else "⚪️ <b>Не подключен</b>"

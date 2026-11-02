@@ -122,6 +122,12 @@ async def build_stats_text() -> str:
 async def handle_admin_command(message: Message, state: FSMContext):
     user_id = message.from_user.id
     if not is_admin(user_id):
+        await message.answer(
+            f"❌ <b>Доступ в админ-панель запрещён.</b>\n\n"
+            f"Ваш Telegram ID: <code>{user_id}</code>\n"
+            f"Если вы администратор, отправьте этот ID для добавления в <code>ADMIN_IDS</code>.",
+            parse_mode="HTML"
+        )
         return
 
     await db.register_user(user_id, message.from_user.username, message.from_user.first_name)
@@ -129,13 +135,17 @@ async def handle_admin_command(message: Message, state: FSMContext):
     text = await build_stats_text()
     await message.answer(text, reply_markup=get_admin_keyboard(), parse_mode="HTML")
 
-@admin_router.callback_query(F.data == "admin_menu")
+@admin_router.callback_query(F.data.in_(["admin_panel", "admin_menu"]))
 async def handle_admin_menu(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
+        await callback.answer(f"Доступ запрещён! Ваш ID: {callback.from_user.id}", show_alert=True)
         return
     await state.clear()
     text = await build_stats_text()
-    await callback.message.edit_text(text, reply_markup=get_admin_keyboard(), parse_mode="HTML")
+    try:
+        await callback.message.edit_text(text, reply_markup=get_admin_keyboard(), parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=get_admin_keyboard(), parse_mode="HTML")
     try:
         await callback.answer()
     except Exception:

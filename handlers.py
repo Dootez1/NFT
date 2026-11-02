@@ -228,7 +228,7 @@ async def build_profile_text(user, bot: Bot) -> str:
 async def handle_profile_command(message: Message, bot: Bot):
     user_id = message.from_user.id
     if not await db.is_user_authorized(user_id):
-        await message.answer(UNAUTHORIZED_TEXT, parse_mode="HTML")
+        return
         return
     text = await build_profile_text(message.from_user, bot)
     await message.answer(text, reply_markup=get_profile_keyboard(), parse_mode="HTML")
@@ -237,7 +237,7 @@ async def handle_profile_command(message: Message, bot: Bot):
 async def handle_menu_profile(callback: CallbackQuery, bot: Bot):
     user_id = callback.from_user.id
     if not await db.is_user_authorized(user_id):
-        await safe_answer(callback, "Доступ ограничен!", show_alert=True)
+        await safe_answer(callback)
         return
     text = await build_profile_text(callback.from_user, bot)
     try:
@@ -411,16 +411,6 @@ async def handle_start(message: Message, command: CommandObject, bot: Bot):
     is_auth = await db.is_user_authorized(user_id)
 
     if not is_auth:
-        neutral_text = (
-            "🛡 <b>Сервис безопасных P2P сделок</b>\n\n"
-            "Данный сервис обеспечивает надёжное проведение сделок с Telegram-подарками и цифровыми товарами через защищённый смарт-гарант.\n\n"
-            "• Депонирование средств и верификация передачи\n"
-            "• Автоматическая защита участников от мошенничества\n"
-            "• Мгновенное подтверждение и зачисление оплаты\n\n"
-            "ℹ️ <i>Если вам отправили предложение о покупке подарка — перейдите по кнопке в полученном сообщении.</i>\n\n"
-            "🔒 <i>Вход в рабочую панель управления доступен только по персональной ссылке от администратора.</i>"
-        )
-        await message.answer(neutral_text, parse_mode="HTML")
         return
 
     await message.answer(get_welcome_text(), reply_markup=get_main_menu_keyboard(is_admin=is_admin), parse_mode="HTML")
@@ -429,7 +419,7 @@ async def handle_start(message: Message, command: CommandObject, bot: Bot):
 async def handle_menu_main(callback: CallbackQuery):
     user_id = callback.from_user.id
     if not await db.is_user_authorized(user_id):
-        await safe_answer(callback, "Доступ ограничен!", show_alert=True)
+        await safe_answer(callback)
         return
     is_admin = user_id in config.ADMIN_IDS
     try:
@@ -444,7 +434,7 @@ async def handle_menu_main(callback: CallbackQuery):
 async def handle_cmd_create(message: Message, state: FSMContext):
     user_id = message.from_user.id
     if not await db.is_user_authorized(user_id):
-        await message.answer(UNAUTHORIZED_TEXT, parse_mode="HTML")
+        return
         return
     is_active = await db.is_subscription_active(user_id)
     if not is_active:
@@ -473,7 +463,7 @@ async def handle_cmd_create(message: Message, state: FSMContext):
 async def handle_menu_create(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     if not await db.is_user_authorized(user_id):
-        await safe_answer(callback, "Доступ ограничен!", show_alert=True)
+        await safe_answer(callback)
         return
     is_active = await db.is_subscription_active(user_id)
     if not is_active:
@@ -899,15 +889,7 @@ async def handle_create_send(callback: CallbackQuery, state: FSMContext, bot: Bo
 async def handle_inline_query(inline_query: InlineQuery, bot: Bot):
     user = inline_query.from_user
     if not await db.is_user_authorized(user.id):
-        article = InlineQueryResultArticle(
-            id="auth_required",
-            title="🔒 Доступ ограничен",
-            description="Требуется авторизация в боте по ссылке доступа.",
-            input_message_content=InputTextMessageContent(
-                message_text="🔒 Доступ к функционалу офферов ограничен."
-            )
-        )
-        await inline_query.answer([article], cache_time=1, is_personal=True)
+        await inline_query.answer([], cache_time=1, is_personal=True)
         return
     is_active = await db.is_subscription_active(user.id)
     if not is_active:
@@ -1016,7 +998,7 @@ async def handle_business_message_tracker(message: Message):
 @router.callback_query(F.data == "menu_business")
 async def handle_menu_business(callback: CallbackQuery, bot: Bot):
     if not await db.is_user_authorized(callback.from_user.id):
-        await safe_answer(callback, "Доступ ограничен!", show_alert=True)
+        await safe_answer(callback)
         return
     bot_info = await bot.get_me()
     uname = bot_info.username or getattr(config, "MAIN_BOT_USERNAME", "hjchasdbot")
@@ -1052,9 +1034,9 @@ async def handle_menu_my_deals(event: Message | CallbackQuery):
     user_id = event.from_user.id
     if not await db.is_user_authorized(user_id):
         if isinstance(event, CallbackQuery):
-            await safe_answer(event, "Доступ ограничен!", show_alert=True)
+            await safe_answer(event)
         else:
-            await event.answer(UNAUTHORIZED_TEXT, parse_mode="HTML")
+            return
         return
     deals = await db.get_deals_by_buyer(user_id, limit=8)
 
@@ -1124,9 +1106,9 @@ async def handle_subscription_view(event: Message | CallbackQuery):
     user_id = event.from_user.id
     if not await db.is_user_authorized(user_id):
         if isinstance(event, CallbackQuery):
-            await safe_answer(event, "Доступ ограничен!", show_alert=True)
+            await safe_answer(event)
         else:
-            await event.answer(UNAUTHORIZED_TEXT, parse_mode="HTML")
+            return
         return
     await db.register_user(user_id, event.from_user.username, event.from_user.first_name)
     sub = await db.get_subscription(user_id)

@@ -100,83 +100,47 @@ async def init_db():
                 bot_token TEXT NOT NULL,
                 bot_id INTEGER NOT NULL,
                 bot_username TEXT NOT NULL,
+                owner_tg_id INTEGER,
                 is_active BOOLEAN DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
-
-        # Standalone Web Platform Tables (Не зависят от Telegram авторизации)
         await db.execute("""
-            CREATE TABLE IF NOT EXISTS web_users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                login TEXT UNIQUE NOT NULL,
-                email TEXT,
-                password_hash TEXT NOT NULL,
-                role TEXT DEFAULT 'user',
-                sub_plan TEXT DEFAULT 'none',
-                sub_expires_at TIMESTAMP,
+            CREATE TABLE IF NOT EXISTS authorized_users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                invited_by INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
         await db.execute("""
-            CREATE TABLE IF NOT EXISTS web_user_bots (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                web_user_id INTEGER NOT NULL,
-                bot_token TEXT NOT NULL,
-                bot_id INTEGER,
-                bot_username TEXT,
-                is_active BOOLEAN DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS web_deals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                web_user_id INTEGER NOT NULL,
-                nft_name TEXT NOT NULL,
-                nft_number TEXT NOT NULL,
-                stars_amount INTEGER NOT NULL,
-                recipient TEXT,
-                deal_link TEXT,
-                status TEXT DEFAULT 'PENDING',
+            CREATE TABLE IF NOT EXISTS access_links (
+                code TEXT PRIMARY KEY,
+                created_by INTEGER NOT NULL,
+                label TEXT,
+                uses_count INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
 
-        # Migrations for existing tables
+        # Migrations
         try:
-            await db.execute("ALTER TABLE subscriptions ADD COLUMN plan TEXT DEFAULT 'standard';")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE deals ADD COLUMN inline_message_id TEXT;")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE deals ADD COLUMN currency TEXT DEFAULT 'STARS';")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE deals ADD COLUMN recipient TEXT DEFAULT '@DealNftOffer';")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE deals ADD COLUMN lang TEXT DEFAULT 'RU';")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT;")
+            await db.execute("ALTER TABLE worker_bots ADD COLUMN owner_tg_id INTEGER;")
         except Exception:
             pass
 
-        # Performance Indexes
+        # Performance Indexes for High Scale (100,000+ bots & deals)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_deals_status_expires ON deals(status, expires_at);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_deals_buyer ON deals(buyer_id);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_deals_seller ON deals(seller_id);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_subs_expires ON subscriptions(expires_at);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_charge ON payments_history(telegram_payment_charge_id);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_worker_bots_uid ON worker_bots(user_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_worker_bots_bot_id ON worker_bots(bot_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_worker_bots_owner_tg_id ON worker_bots(owner_tg_id);")
 
         await db.commit()
 
@@ -682,6 +646,26 @@ async def get_worker_bot(user_id: int) -> Optional[Dict[str, Any]]:
             row = await cur.fetchone()
             return dict(row) if row else None
 
+async def get_worker_bot_by_bot_id(bot_id: int) -> Optional[Dict[str, Any]]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM worker_bots WHERE bot_id = ?", (bot_id,)) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+async def set_worker_bot_owner(bot_id: int, owner_tg_id: int):
+    async with get_write_db() as db:
+        await db.execute("UPDATE worker_bots SET owner_tg_id = ? WHERE bot_id = ?", (owner_tg_id, bot_id))
+        await db.commit()
+
+async def set_worker_bot_status_by_id_or_token(bot_id: int, bot_token: str, is_active: int = 0):
+    async with get_write_db() as db:
+        if bot_id:
+            await db.execute("UPDATE worker_bots SET is_active = ? WHERE bot_id = ?", (is_active, bot_id))
+        elif bot_token:
+            await db.execute("UPDATE worker_bots SET is_active = ? WHERE bot_token = ?", (is_active, bot_token.strip()))
+        await db.commit()
+
 async def delete_worker_bot(user_id: int):
     async with get_write_db() as db:
         await db.execute("DELETE FROM worker_bots WHERE user_id = ?", (user_id,))
@@ -739,148 +723,97 @@ async def get_all_worker_bots_full() -> List[Dict[str, Any]]:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
 
-# =============================================================
-# Standalone Web Platform Helpers (Полностью отдельный проект)
-# =============================================================
+# --- ACCESS LINKS & WORKER AUTHORIZATION ---
 
-async def web_register_user(login: str, password_hash: str, email: Optional[str] = None) -> Tuple[bool, Optional[Dict[str, Any]], str]:
-    clean_login = login.strip().lower()
-    async with get_write_db() as db:
-        db.row_factory = aiosqlite.Row
-        # Check if already exists
-        async with db.execute("SELECT id FROM web_users WHERE LOWER(login) = ?", (clean_login,)) as cur:
-            if await cur.fetchone():
-                return False, None, "Пользователь с таким логином уже существует"
-
-        cur = await db.execute("""
-            INSERT INTO web_users (login, email, password_hash, role, sub_plan, created_at)
-            VALUES (?, ?, ?, 'user', 'none', CURRENT_TIMESTAMP)
-        """, (clean_login, email, password_hash))
-        new_id = cur.lastrowid
-        await db.commit()
-
-        async with db.execute("SELECT * FROM web_users WHERE id = ?", (new_id,)) as cur2:
-            row = await cur2.fetchone()
-            return True, dict(row) if row else None, "Успешно"
-
-async def web_authenticate_user(login: str, password_hash: str) -> Optional[Dict[str, Any]]:
-    clean_login = login.strip().lower()
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM web_users WHERE LOWER(login) = ? AND password_hash = ?",
-            (clean_login, password_hash)
-        ) as cur:
-            row = await cur.fetchone()
-            return dict(row) if row else None
-
-async def web_get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM web_users WHERE id = ?", (user_id,)) as cur:
-            row = await cur.fetchone()
-            return dict(row) if row else None
-
-async def web_update_subscription(user_id: int, plan: str, days: int = 30) -> str:
-    now = now_utc_dt()
-    user = await web_get_user_by_id(user_id)
-    if user and user.get("sub_expires_at"):
-        try:
-            curr_exp = datetime.strptime(user["sub_expires_at"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-        except Exception:
-            curr_exp = now
-        new_exp = (curr_exp if curr_exp > now else now) + timedelta(days=days)
-    else:
-        new_exp = now + timedelta(days=days)
-
-    exp_str = new_exp.strftime("%Y-%m-%d %H:%M:%S")
-    async with get_write_db() as db:
-        await db.execute("""
-            UPDATE web_users SET sub_plan = ?, sub_expires_at = ? WHERE id = ?
-        """, (plan, exp_str, user_id))
-        await db.commit()
-    return exp_str
-
-async def web_is_subscription_active(user_id: int) -> bool:
-    user = await web_get_user_by_id(user_id)
-    if not user:
-        return False
-    if user.get("role") == "admin":
+async def is_user_authorized(user_id: int) -> bool:
+    if user_id in ADMIN_IDS:
         return True
-    exp_str = user.get("sub_expires_at")
-    if not exp_str:
-        return False
-    try:
-        exp_dt = datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-        return exp_dt > now_utc_dt()
-    except Exception:
-        return False
+    async with get_db() as db:
+        async with db.execute("SELECT user_id FROM authorized_users WHERE user_id = ?", (user_id,)) as cur:
+            row = await cur.fetchone()
+            if row:
+                return True
+        # Also authorized if active subscription exists
+        async with db.execute("SELECT user_id FROM subscriptions WHERE user_id = ? AND expires_at > CURRENT_TIMESTAMP", (user_id,)) as cur:
+            row = await cur.fetchone()
+            return row is not None
 
-async def web_save_bot(web_user_id: int, bot_token: str, bot_id: int, bot_username: str):
-    async with get_write_db() as db:
+async def add_authorized_user(user_id: int, username: str = None, first_name: str = None, invited_by: int = None) -> bool:
+    async with get_db() as db:
         await db.execute("""
-            INSERT INTO web_user_bots (web_user_id, bot_token, bot_id, bot_username, is_active)
-            VALUES (?, ?, ?, ?, 1)
-        """, (web_user_id, bot_token, bot_id, bot_username))
+            INSERT OR REPLACE INTO authorized_users (user_id, username, first_name, invited_by)
+            VALUES (?, ?, ?, ?)
+        """, (user_id, username, first_name, invited_by))
         await db.commit()
+    return True
 
-async def web_get_user_bots(web_user_id: int) -> List[Dict[str, Any]]:
+async def remove_authorized_user(user_id: int) -> bool:
+    async with get_db() as db:
+        await db.execute("DELETE FROM authorized_users WHERE user_id = ?", (user_id,))
+        await db.commit()
+    return True
+
+async def get_all_authorized_users() -> List[Dict[str, Any]]:
     async with get_db() as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT * FROM web_user_bots WHERE web_user_id = ? ORDER BY id DESC",
-            (web_user_id,)
+            "SELECT user_id, username, first_name, invited_by, created_at FROM authorized_users ORDER BY created_at DESC"
         ) as cur:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
 
-async def web_delete_bot(web_user_id: int, bot_id: int):
-    async with get_write_db() as db:
-        await db.execute(
-            "DELETE FROM web_user_bots WHERE web_user_id = ? AND id = ?",
-            (web_user_id, bot_id)
-        )
+async def create_access_link(code: str, created_by: int, label: str = "Линк доступа") -> str:
+    async with get_db() as db:
+        await db.execute("""
+            INSERT OR REPLACE INTO access_links (code, created_by, label, uses_count)
+            VALUES (?, ?, ?, 0)
+        """, (code, created_by, label))
         await db.commit()
+    return code
 
-async def web_save_deal(web_user_id: int, nft_name: str, nft_number: str, stars_amount: int, recipient: str, deal_link: str) -> int:
-    async with get_write_db() as db:
-        cur = await db.execute("""
-            INSERT INTO web_deals (web_user_id, nft_name, nft_number, stars_amount, recipient, deal_link, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
-        """, (web_user_id, nft_name, nft_number, stars_amount, recipient, deal_link))
-        new_id = cur.lastrowid
-        await db.commit()
-        return new_id
-
-async def web_get_user_deals(web_user_id: int) -> List[Dict[str, Any]]:
+async def get_access_link(code: str) -> Optional[Dict[str, Any]]:
     async with get_db() as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT * FROM web_deals WHERE web_user_id = ? ORDER BY id DESC LIMIT 50",
-            (web_user_id,)
+            "SELECT code, created_by, label, uses_count, created_at FROM access_links WHERE code = ?",
+            (code,)
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+async def use_access_link(code: str, user_id: int, username: str = None, first_name: str = None) -> bool:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT code, created_by FROM access_links WHERE code = ?", (code,)) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return False
+            invited_by = row["created_by"]
+        await db.execute("UPDATE access_links SET uses_count = uses_count + 1 WHERE code = ?", (code,))
+        await db.execute("""
+            INSERT OR REPLACE INTO authorized_users (user_id, username, first_name, invited_by)
+            VALUES (?, ?, ?, ?)
+        """, (user_id, username, first_name, invited_by))
+        await db.commit()
+    return True
+
+async def get_all_access_links() -> List[Dict[str, Any]]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT code, created_by, label, uses_count, created_at FROM access_links ORDER BY created_at DESC"
         ) as cur:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
 
-async def web_get_admin_metrics() -> Dict[str, Any]:
+async def delete_access_link(code: str) -> bool:
     async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT COUNT(*) as c FROM web_users") as cur:
-            total_users = (await cur.fetchone())["c"]
-        async with db.execute("SELECT COUNT(*) as c FROM web_user_bots") as cur:
-            total_bots = (await cur.fetchone())["c"]
-        async with db.execute("SELECT COUNT(*) as c FROM web_deals") as cur:
-            total_deals = (await cur.fetchone())["c"]
-        now_str = now_utc_str()
-        async with db.execute("SELECT COUNT(*) as c FROM web_users WHERE sub_expires_at > ?", (now_str,)) as cur:
-            active_subs = (await cur.fetchone())["c"]
+        await db.execute("DELETE FROM access_links WHERE code = ?", (code,))
+        await db.commit()
+    return True
 
-        return {
-            "total_users": total_users,
-            "total_bots": total_bots,
-            "total_deals": total_deals,
-            "active_subs": active_subs
-        }
+
+
 
 
 

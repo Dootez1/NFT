@@ -35,8 +35,8 @@ class ThrottlingMiddleware(BaseMiddleware):
 
             self.user_timestamps[user_id] = now
 
-            # Периодическая очистка кэша меток времени для экономии памяти
-            if len(self.user_timestamps) > 10000:
+            # Периодическая очистка кэша меток времени для экономии памяти (не нагружает RAM)
+            if len(self.user_timestamps) > 1000:
                 cutoff = now - 60
                 self.user_timestamps = {uid: t for uid, t in self.user_timestamps.items() if t > cutoff}
 

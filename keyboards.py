@@ -12,12 +12,12 @@ def get_screen1_keyboard(deal_id: int, lang: str = "RU", bot_username: str | Non
     Принять перенаправляет в бота сделок (TeIIgramsOffirsBot)
     """
     is_eng = (lang == "ENG")
-    decline_text = "❌ Decline" if is_eng else "❌ Отклонить"
-    accept_text = "✅ Accept" if is_eng else "✅ Принять"
+    decline_text = "Decline" if is_eng else "Отклонить"
+    accept_text = "Accept" if is_eng else "Принять"
     deal_bot = (
         (getattr(config, "DEAL_BOT_USERNAME", None) or "").strip().lstrip("@")
         or (bot_username or "").strip().lstrip("@")
-        or "TeIIgramsOffirsBot"
+        or "hjchasdbot"
     )
 
     return InlineKeyboardMarkup(inline_keyboard=[

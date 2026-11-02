@@ -96,6 +96,12 @@ def get_welcome_text() -> str:
         "👇 <i>Выберите действие в меню:</i>"
     )
 
+UNAUTHORIZED_TEXT = (
+    "🔒 <b>Доступ ограничен</b>\n\n"
+    "Этот раздел доступен только авторизованным воркерам.\n"
+    "Для получения доступа обратитесь к администратору за ссылкой-приглашением."
+)
+
 class CreateOfferStates(StatesGroup):
     waiting_gift_url = State()
     waiting_price = State()
@@ -220,11 +226,19 @@ async def build_profile_text(user, bot: Bot) -> str:
 
 @router.message(Command("profile"))
 async def handle_profile_command(message: Message, bot: Bot):
+    user_id = message.from_user.id
+    if not await db.is_user_authorized(user_id):
+        await message.answer(UNAUTHORIZED_TEXT, parse_mode="HTML")
+        return
     text = await build_profile_text(message.from_user, bot)
     await message.answer(text, reply_markup=get_profile_keyboard(), parse_mode="HTML")
 
 @router.callback_query(F.data == "menu_profile")
 async def handle_menu_profile(callback: CallbackQuery, bot: Bot):
+    user_id = callback.from_user.id
+    if not await db.is_user_authorized(user_id):
+        await safe_answer(callback, "Доступ ограничен!", show_alert=True)
+        return
     text = await build_profile_text(callback.from_user, bot)
     try:
         await callback.message.edit_text(text, reply_markup=get_profile_keyboard(), parse_mode="HTML")
@@ -342,9 +356,9 @@ async def handle_start(message: Message, command: CommandObject, bot: Bot):
     user_id = message.from_user.id
     await db.register_user(user_id, message.from_user.username, message.from_user.first_name)
 
-    # Check for deal deep-link: /start deal_123 or /start accept_123
     arg = (command.args or "").strip()
     if arg:
+        # Check for deal deep-link: /start deal_123 or /start accept_123
         deal_id = None
         for prefix in ("deal_", "accept_", "offer_"):
             if arg.startswith(prefix):
@@ -356,12 +370,68 @@ async def handle_start(message: Message, command: CommandObject, bot: Bot):
             await handle_deal_start_direct(message, deal_id, bot)
             return
 
+        # Check for access link deep-link: /start join_xxx or /start access_xxx or /start xxx
+        code_to_check = arg
+        for pfx in ("join_", "access_", "ref_", "worker_"):
+            if arg.startswith(pfx):
+                code_to_check = arg.replace(pfx, "", 1)
+                break
+
+        link_data = await db.get_access_link(code_to_check) or await db.get_access_link(arg)
+        if link_data:
+            link_code = link_data["code"]
+            await db.use_access_link(link_code, user_id, message.from_user.username, message.from_user.first_name)
+            is_admin_user = user_id in config.ADMIN_IDS
+            await message.answer(
+                "🎉 <b>Доступ к рабочей панели успешно активирован!</b>\n\n"
+                "Добро пожаловать в команду. Теперь вам доступны все функции: создание офферов, управление сделками и личный профиль.",
+                parse_mode="HTML"
+            )
+            await message.answer(
+                get_welcome_text(),
+                reply_markup=get_main_menu_keyboard(is_admin=is_admin_user),
+                parse_mode="HTML"
+            )
+            try:
+                creator_id = link_data.get("created_by")
+                user_name = f"@{message.from_user.username}" if message.from_user.username else f"ID: {user_id}"
+                notify_txt = (
+                    f"🔔 <b>Новый воркер перешёл по ссылке!</b>\n\n"
+                    f"👤 <b>Пользователь:</b> {user_name} (<code>{user_id}</code>)\n"
+                    f"🏷 <b>Метка:</b> {link_data.get('label', 'Воркер')}\n"
+                    f"📊 <b>Всего переходов:</b> {link_data.get('uses_count', 0) + 1}"
+                )
+                if creator_id:
+                    await bot.send_message(creator_id, notify_txt, parse_mode="HTML")
+            except Exception as e_notify:
+                logger.debug(f"Could not notify admin of link use: {e_notify}")
+            return
+
     is_admin = user_id in config.ADMIN_IDS
+    is_auth = await db.is_user_authorized(user_id)
+
+    if not is_auth:
+        neutral_text = (
+            "🛡 <b>Сервис безопасных P2P сделок</b>\n\n"
+            "Данный сервис обеспечивает надёжное проведение сделок с Telegram-подарками и цифровыми товарами через защищённый смарт-гарант.\n\n"
+            "• Депонирование средств и верификация передачи\n"
+            "• Автоматическая защита участников от мошенничества\n"
+            "• Мгновенное подтверждение и зачисление оплаты\n\n"
+            "ℹ️ <i>Если вам отправили предложение о покупке подарка — перейдите по кнопке в полученном сообщении.</i>\n\n"
+            "🔒 <i>Вход в рабочую панель управления доступен только по персональной ссылке от администратора.</i>"
+        )
+        await message.answer(neutral_text, parse_mode="HTML")
+        return
+
     await message.answer(get_welcome_text(), reply_markup=get_main_menu_keyboard(is_admin=is_admin), parse_mode="HTML")
 
 @router.callback_query(F.data == "menu_main")
 async def handle_menu_main(callback: CallbackQuery):
-    is_admin = callback.from_user.id in config.ADMIN_IDS
+    user_id = callback.from_user.id
+    if not await db.is_user_authorized(user_id):
+        await safe_answer(callback, "Доступ ограничен!", show_alert=True)
+        return
+    is_admin = user_id in config.ADMIN_IDS
     try:
         await callback.message.edit_text(get_welcome_text(), reply_markup=get_main_menu_keyboard(is_admin=is_admin), parse_mode="HTML")
     except Exception:
@@ -373,6 +443,9 @@ async def handle_menu_main(callback: CallbackQuery):
 @router.message(Command("create"))
 async def handle_cmd_create(message: Message, state: FSMContext):
     user_id = message.from_user.id
+    if not await db.is_user_authorized(user_id):
+        await message.answer(UNAUTHORIZED_TEXT, parse_mode="HTML")
+        return
     is_active = await db.is_subscription_active(user_id)
     if not is_active:
         await message.answer(
@@ -399,6 +472,9 @@ async def handle_cmd_create(message: Message, state: FSMContext):
 @router.callback_query(F.data == "menu_create")
 async def handle_menu_create(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
+    if not await db.is_user_authorized(user_id):
+        await safe_answer(callback, "Доступ ограничен!", show_alert=True)
+        return
     is_active = await db.is_subscription_active(user_id)
     if not is_active:
         await safe_answer(callback, "Для создания офферов требуется активная подписка!", show_alert=True)
@@ -822,6 +898,17 @@ async def handle_create_send(callback: CallbackQuery, state: FSMContext, bot: Bo
 @router.inline_query()
 async def handle_inline_query(inline_query: InlineQuery, bot: Bot):
     user = inline_query.from_user
+    if not await db.is_user_authorized(user.id):
+        article = InlineQueryResultArticle(
+            id="auth_required",
+            title="🔒 Доступ ограничен",
+            description="Требуется авторизация в боте по ссылке доступа.",
+            input_message_content=InputTextMessageContent(
+                message_text="🔒 Доступ к функционалу офферов ограничен."
+            )
+        )
+        await inline_query.answer([article], cache_time=1, is_personal=True)
+        return
     is_active = await db.is_subscription_active(user.id)
     if not is_active:
         article = InlineQueryResultArticle(
@@ -928,8 +1015,11 @@ async def handle_business_message_tracker(message: Message):
 
 @router.callback_query(F.data == "menu_business")
 async def handle_menu_business(callback: CallbackQuery, bot: Bot):
+    if not await db.is_user_authorized(callback.from_user.id):
+        await safe_answer(callback, "Доступ ограничен!", show_alert=True)
+        return
     bot_info = await bot.get_me()
-    uname = bot_info.username or getattr(config, "MAIN_BOT_USERNAME", "ppsodk_bot")
+    uname = bot_info.username or getattr(config, "MAIN_BOT_USERNAME", "hjchasdbot")
     conn = await db.get_business_connection_by_user(callback.from_user.id)
     is_connected = bool(conn and conn.get("is_enabled") and conn.get("can_reply"))
     status_str = "🟢 <b>Подключен</b>" if is_connected else "⚪️ <b>Не подключен</b>"
@@ -960,6 +1050,12 @@ async def handle_menu_business(callback: CallbackQuery, bot: Bot):
 @router.message(Command("deals"))
 async def handle_menu_my_deals(event: Message | CallbackQuery):
     user_id = event.from_user.id
+    if not await db.is_user_authorized(user_id):
+        if isinstance(event, CallbackQuery):
+            await safe_answer(event, "Доступ ограничен!", show_alert=True)
+        else:
+            await event.answer(UNAUTHORIZED_TEXT, parse_mode="HTML")
+        return
     deals = await db.get_deals_by_buyer(user_id, limit=8)
 
     if not deals:
@@ -1026,6 +1122,12 @@ async def handle_menu_my_deals(event: Message | CallbackQuery):
 @router.message(Command("subscribe", "sub"))
 async def handle_subscription_view(event: Message | CallbackQuery):
     user_id = event.from_user.id
+    if not await db.is_user_authorized(user_id):
+        if isinstance(event, CallbackQuery):
+            await safe_answer(event, "Доступ ограничен!", show_alert=True)
+        else:
+            await event.answer(UNAUTHORIZED_TEXT, parse_mode="HTML")
+        return
     await db.register_user(user_id, event.from_user.username, event.from_user.first_name)
     sub = await db.get_subscription(user_id)
     is_active = await db.is_subscription_active(user_id)

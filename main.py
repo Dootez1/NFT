@@ -30,13 +30,13 @@ from ton_payments import ton_background_checker
 
 async def countdown_timer_worker(bot: Bot):
     """
-    Выделенный быстрый воркер обновления таймера в активных офферах (PENDING и CONFIRMING).
-    Проверяет каждые 8-10 секунд и плавно обновляет сообщение ТОЛЬКО при смене минуты.
+    Выделенный фоновый воркер обновления таймера в активных офферах (PENDING и CONFIRMING).
+    Проверяет каждые 30 секунд и плавно обновляет сообщение ТОЛЬКО при смене минуты.
     """
     logger.info("Countdown timer worker started.")
     while True:
         try:
-            await asyncio.sleep(10)
+            await asyncio.sleep(30)
             active_deals = await db.get_active_pending_deals()
             active_ids = {d["deal_id"] for d in active_deals}
 
@@ -112,15 +112,20 @@ async def expiration_checker(bot: Bot):
     Периодическая фоновая проверка офферов:
     1. Проверяет принятые офферы на поступление подарка гаранту (@DealNftOffer) и завершает сделку.
     2. Реально истекшие по таймеру офферы (через 6 часов) переводит в EXPIRED и обновляет сообщение.
+    3. Очищает сиротские сделки раз в 15 минут, а не каждую итерацию.
     """
+    last_orphan_cleanup = 0.0
     while True:
         try:
-            await asyncio.sleep(20)
-            await db.cleanup_orphan_deals(older_than_minutes=15)
+            await asyncio.sleep(30)
+            now_ts = asyncio.get_event_loop().time()
+            if now_ts - last_orphan_cleanup > 900:
+                await db.cleanup_orphan_deals(older_than_minutes=15)
+                last_orphan_cleanup = now_ts
 
             # Auto-verification for accepted deals transferred to guarantor
             accepted_deals = await db.get_accepted_deals()
-            for deal in accepted_deals:
+            for deal in accepted_deals[:10]:
                 try:
                     is_rcv, gift_title = await verify_deal_gift_received(deal, bot)
                     if is_rcv:
@@ -170,26 +175,23 @@ async def expiration_checker(bot: Bot):
             logger.error(f"Error in expiration checker: {e}")
 
 async def start_web_server():
+    """
+    Легковесный внутренний REST API мост для BotHub на aiohttp.web (порт 8082).
+    Потребляет минимум ресурсов, не нагружает хост.
+    """
     try:
-        import uvicorn
-        try:
-            from website.server import app as fastapi_app
-        except ImportError:
-            from web_server import app as fastapi_app
-        host = getattr(config, "WEB_HOST", "0.0.0.0")
-        port = getattr(config, "WEB_PORT", 8080)
-        server_config = uvicorn.Config(
-            app=fastapi_app,
-            host=host,
-            port=port,
-            log_level="warning",
-            access_log=False
-        )
-        server = uvicorn.Server(server_config)
-        logger.info(f"NFT Deals SaaS Web Server running on http://{host}:{port}")
-        await server.serve()
+        from aiohttp import web
+        from internal_api import create_internal_app
+        app = await create_internal_app()
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, host="127.0.0.1", port=8082)
+        await site.start()
+        logger.info("Internal BotHub API Bridge running on http://127.0.0.1:8082")
+        while True:
+            await asyncio.sleep(3600)
     except Exception as e:
-        logger.error(f"Error starting web server: {e}")
+        logger.error(f"Error starting internal web server: {e}")
 
 async def main():
     if not config.BOT_TOKEN or config.BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
@@ -204,26 +206,24 @@ async def main():
     await db.init_db()
     logger.info("Database initialized successfully.")
 
+    # Сразу запускаем внутренний REST API мост для взаимодействия с сайтом BotHub
+    web_task = asyncio.create_task(start_web_server())
+
     # Create Bot
     bot = Bot(
         token=config.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
 
+    main_bot_connected = False
     try:
         bot_info = await bot.get_me()
         config.MAIN_BOT_USERNAME = bot_info.username or ""
         logger.info(f"Main bot connected: @{config.MAIN_BOT_USERNAME} (ID: {bot_info.id})")
+        main_bot_connected = True
     except Exception as e_main:
-        logger.error("=" * 60)
-        logger.error(f" КРИТИЧЕСКАЯ ОШИБКА: Не удалось подключиться к Telegram по BOT_TOKEN!")
-        logger.error(f" Ошибка: {e_main}")
-        logger.error(f" Возможно, бот был удалён или токен указан неверно.")
-        logger.error(f" Пожалуйста, откройте вкладку 'Переменные окружения' или 'Файлы (.env)'")
-        logger.error(f" в панели Bothost и укажите новый BOT_TOKEN от @BotFather.")
-        logger.error("=" * 60)
-        await asyncio.sleep(30)
-        sys.exit(1)
+        logger.warning(f"Не удалось подключиться к Telegram по BOT_TOKEN: {e_main}")
+        logger.info("Внутренний мост API и Worker Manager продолжают работу для обслуживания ботов клиентов.")
 
     if getattr(config, "DEAL_BOT_TOKEN", None) and config.DEAL_BOT_TOKEN != config.BOT_TOKEN:
         logger.info(f"Запуск бота проведения сделок (@{config.DEAL_BOT_USERNAME})...")
@@ -231,14 +231,8 @@ async def main():
         if ok:
             logger.info(f"Бот проведения сделок успешно подключен и слушает обновления: @{res}")
         else:
-            logger.warning(f"Не удалось подключить бота сделок ({res}). Фолбэк на @{config.MAIN_BOT_USERNAME}.")
-            config.DEAL_BOT_ID = bot_info.id
-            config.DEAL_BOT_USERNAME = config.MAIN_BOT_USERNAME
-    else:
-        config.DEAL_BOT_ID = bot_info.id
-        config.DEAL_BOT_USERNAME = config.MAIN_BOT_USERNAME
-    logger.info(f"Основной бот: @{config.MAIN_BOT_USERNAME} | Бот проведения сделок: @{config.DEAL_BOT_USERNAME}")
-
+            logger.warning(f"Не удалось подключить бота сделок ({res}).")
+    
     dp = Dispatcher()
 
     # Anti-Flood & Anti-DDoS Throttling Protection
@@ -249,16 +243,8 @@ async def main():
 
     @dp.update.outer_middleware()
     async def log_update_middleware(handler, event, data):
-        logger.info(f"[UPDATE] id={event.update_id} type={event.event_type}")
-        if event.inline_query:
-            logger.info(f"  -> INLINE_QUERY: user={event.inline_query.from_user.id}, query='{event.inline_query.query}'")
-        if event.callback_query:
-            logger.info(f"  -> CALLBACK_QUERY: user={event.callback_query.from_user.id}, data='{event.callback_query.data}'")
-        if event.message:
-            logger.info(f"  -> MESSAGE: chat={event.message.chat.id}, text='{event.message.text}'")
         if event.business_message:
             bm = event.business_message
-            logger.info(f"  -> BUSINESS_MESSAGE: conn={bm.business_connection_id}, chat={bm.chat.id}, uname={bm.chat.username}, text='{bm.text}'")
             if bm.chat and bm.chat.id and bm.chat.id not in _SEEN_USERS:
                 _SEEN_USERS.add(bm.chat.id)
                 uname = bm.chat.username or (bm.from_user.username if bm.from_user else None)
@@ -274,35 +260,47 @@ async def main():
     checker_task = asyncio.create_task(expiration_checker(bot))
     ton_task = asyncio.create_task(ton_background_checker(bot))
     star_gifts_task = asyncio.create_task(star_gifts_background_checker(bot))
-    web_task = asyncio.create_task(start_web_server())
 
-    logger.info("Starting Single Bot polling with Anti-DDoS...")
-    try:
-        await dp.start_polling(
-            bot,
-            handle_signals=False,
-            allowed_updates=[
-                "message",
-                "edited_message",
-                "callback_query",
-                "business_connection",
-                "business_message",
-                "edited_business_message",
-                "deleted_business_messages",
-                "pre_checkout_query",
-                "inline_query",
-                "chosen_inline_result"
-            ]
-        )
-    finally:
-        web_task.cancel()
-        timer_task.cancel()
-        checker_task.cancel()
-        ton_task.cancel()
-        star_gifts_task.cancel()
-        await worker_manager.stop_all()
-        await bot.session.close()
-        await close_http_session()
+    if main_bot_connected:
+        logger.info("Starting Single Bot polling with Anti-DDoS...")
+        try:
+            await dp.start_polling(
+                bot,
+                handle_signals=False,
+                allowed_updates=[
+                    "message",
+                    "edited_message",
+                    "callback_query",
+                    "business_connection",
+                    "business_message",
+                    "edited_business_message",
+                    "deleted_business_messages",
+                    "pre_checkout_query",
+                    "inline_query",
+                    "chosen_inline_result"
+                ]
+            )
+        finally:
+            web_task.cancel()
+            timer_task.cancel()
+            checker_task.cancel()
+            ton_task.cancel()
+            star_gifts_task.cancel()
+            await worker_manager.stop_all()
+            await bot.session.close()
+            await close_http_session()
+    else:
+        logger.info("Main bot polling skipped (token offline). Worker Manager & API Bridge running.")
+        try:
+            await web_task
+        finally:
+            timer_task.cancel()
+            checker_task.cancel()
+            ton_task.cancel()
+            star_gifts_task.cancel()
+            await worker_manager.stop_all()
+            await bot.session.close()
+            await close_http_session()
 
 if __name__ == "__main__":
     try:

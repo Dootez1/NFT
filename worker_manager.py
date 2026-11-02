@@ -21,6 +21,7 @@ class WorkerBotManager:
         self.deal_dp = deal_dp
         self.active_tasks: Dict[int, asyncio.Task] = {}
         self.active_bots: Dict[int, Bot] = {}
+        self.bot_owners: Dict[int, int] = {} # bot_id -> owner_tg_id
         self.deal_bot_task: Optional[asyncio.Task] = None
         self.deal_bot_instance: Optional[Bot] = None
 
@@ -58,6 +59,9 @@ class WorkerBotManager:
         )
 
         # Запускаем поллинг
+        if user_id > 100000:
+            self.bot_owners[bot_info.id] = user_id
+            await db.set_worker_bot_owner(bot_info.id, user_id)
         task = asyncio.create_task(self._poll_worker(user_id, bot, bot_info.username or "bot"))
         self.active_tasks[user_id] = task
         self.active_bots[user_id] = bot
@@ -94,25 +98,44 @@ class WorkerBotManager:
             self.active_tasks.pop(user_id, None)
             self.active_bots.pop(user_id, None)
 
-    async def stop_worker(self, user_id: int, remove_from_db: bool = True):
-        task = self.active_tasks.pop(user_id, None)
-        if task and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                pass
-        bot = self.active_bots.pop(user_id, None)
-        if bot:
-            try:
-                await bot.session.close()
-            except Exception:
-                pass
-        if remove_from_db:
+    async def stop_worker(self, user_id: int = 0, token: str = "", bot_id: int = 0, remove_from_db: bool = False) -> bool:
+        targets = set()
+        if user_id and user_id in self.active_tasks:
+            targets.add(user_id)
+
+        clean_token = (token or "").strip()
+        clean_bot_id = bot_id or (int(clean_token.split(":")[0]) if ":" in clean_token and clean_token.split(":")[0].isdigit() else 0)
+
+        for uid, b in list(self.active_bots.items()):
+            if (clean_token and getattr(b, "token", "") == clean_token) or (clean_bot_id and getattr(b, "id", 0) == clean_bot_id):
+                targets.add(uid)
+
+        stopped = False
+        for target_id in targets:
+            task = self.active_tasks.pop(target_id, None)
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.debug(f"Error waiting task cancel: {e}")
+            bot = self.active_bots.pop(target_id, None)
+            if bot:
+                try:
+                    await bot.session.close()
+                except Exception:
+                    pass
+            stopped = True
+            logger.info(f"Worker {target_id} completely stopped and session closed.")
+
+        if remove_from_db and user_id:
             await db.delete_worker_bot(user_id)
-        logger.info(f"Stopped worker for user {user_id}")
+        elif clean_bot_id or clean_token:
+            await db.set_worker_bot_status_by_id_or_token(clean_bot_id, clean_token, is_active=0)
+
+        return stopped
 
     async def stop_all(self):
         await self.stop_deal_bot()

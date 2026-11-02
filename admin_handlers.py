@@ -2,6 +2,7 @@ import os
 import re
 import asyncio
 import logging
+import secrets
 from datetime import datetime, timezone
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
@@ -26,6 +27,7 @@ class AdminStates(StatesGroup):
     waiting_withdraw_user = State()
     waiting_withdraw_target = State()
     waiting_new_token = State()
+    waiting_revoke_access_user = State()
 
 def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
@@ -41,6 +43,9 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="📊 Обновить статистику", callback_data="admin_stats")
+        ],
+        [
+            InlineKeyboardButton(text="🔗 Ссылки доступа (Воркеры)", callback_data="admin_access_links")
         ],
         [
             InlineKeyboardButton(text="🔥 Полученные подарки (@DealNftOffer)", callback_data="admin_deals")
@@ -915,6 +920,169 @@ async def cmd_set_deal_token(message: Message):
         )
     else:
         await message.answer(f"❌ <b>Ошибка при запуске бота сделок:</b>\n{res}", parse_mode="HTML")
+
+# --- ACCESS LINKS & WORKER MANAGEMENT ---
+
+@admin_router.callback_query(F.data == "admin_access_links")
+async def handle_admin_access_links(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if not is_admin(callback.from_user.id):
+        return
+    await state.clear()
+
+    bot_info = await bot.get_me()
+    uname = bot_info.username or "bot"
+
+    links = await db.get_all_access_links()
+    authorized = await db.get_all_authorized_users()
+
+    text = (
+        "🔗 <b>Управление доступом к боту (Воркеры)</b>\n\n"
+        "Здесь вы можете генерировать ссылки доступа.\n"
+        "Только пользователи, перешедшие по такой ссылке (или администраторы), могут взаимодействовать с ботом: "
+        "создавать офферы, смотреть профиль, оформлять подписки и т.д.\n\n"
+        "Обычные пользователи (продавцы, переходящие по кнопкам офферов) не увидят панель управления и не смогут создавать офферы.\n\n"
+        f"📊 <b>Статистика:</b>\n"
+        f"• Авторизованных воркеров: <b>{len(authorized)}</b>\n"
+        f"• Активных ссылок: <b>{len(links)}</b>\n\n"
+    )
+
+    kb_rows = [
+        [
+            InlineKeyboardButton(text="➕ Создать ссылку доступа", callback_data="admin_create_access_link")
+        ],
+        [
+            InlineKeyboardButton(text=f"👥 Список воркеров ({len(authorized)})", callback_data="admin_list_authorized"),
+            InlineKeyboardButton(text="🚫 Забрать доступ", callback_data="admin_revoke_access_start")
+        ]
+    ]
+
+    if links:
+        text += "<b>Действующие ссылки:</b>\n"
+        for idx, l in enumerate(links[:8], 1):
+            code = l["code"]
+            link_url = f"https://t.me/{uname}?start=join_{code}"
+            text += f"{idx}. <code>{link_url}</code> (переходов: <b>{l['uses_count']}</b>)\n"
+            kb_rows.append([
+                InlineKeyboardButton(text=f"🗑 Удалить #{code[:8]}", callback_data=f"admin_del_link:{code}")
+            ])
+        if len(links) > 8:
+            text += f"\n<i>... и ещё {len(links) - 8} ссылок</i>\n"
+    else:
+        text += "<i>Активных ссылок пока нет. Нажмите кнопку выше, чтобы создать.</i>\n"
+
+    kb_rows.append([
+        InlineKeyboardButton(text="🔙 Назад в админку", callback_data="admin_menu")
+    ])
+
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
+    await callback.answer()
+
+@admin_router.callback_query(F.data == "admin_create_access_link")
+async def handle_admin_create_access_link(callback: CallbackQuery, bot: Bot):
+    if not is_admin(callback.from_user.id):
+        return
+
+    bot_info = await bot.get_me()
+    uname = bot_info.username or "bot"
+    code = secrets.token_hex(4)
+    await db.create_access_link(code=code, created_by=callback.from_user.id, label="Воркер")
+
+    invite_url = f"https://t.me/{uname}?start=join_{code}"
+
+    text = (
+        "✅ <b>Новая ссылка доступа успешно создана!</b>\n\n"
+        "🔗 <b>Ссылка для воркера:</b>\n"
+        f"<code>{invite_url}</code>\n\n"
+        "👆 <i>Нажмите на ссылку, чтобы скопировать её.</i>\n\n"
+        "Отправьте её воркеру. При переходе по ссылке и нажатии «Старт» он автоматически получит доступ к рабочей панели бота!"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Создать ещё", callback_data="admin_create_access_link")],
+        [InlineKeyboardButton(text="🔗 Все ссылки", callback_data="admin_access_links")],
+        [InlineKeyboardButton(text="🔙 Назад в админку", callback_data="admin_menu")]
+    ])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
+    await callback.answer()
+
+@admin_router.callback_query(F.data.startswith("admin_del_link:"))
+async def handle_admin_delete_link(callback: CallbackQuery, bot: Bot, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+    code = callback.data.split(":", 1)[1]
+    await db.delete_access_link(code)
+    await callback.answer("Ссылка удалена!", show_alert=True)
+    await handle_admin_access_links(callback, state, bot)
+
+@admin_router.callback_query(F.data == "admin_list_authorized")
+async def handle_admin_list_authorized(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return
+    users = await db.get_all_authorized_users()
+    if not users:
+        text = "👥 <b>Список авторизованных воркеров</b>\n\n<i>Список пуст. Никто ещё не перешёл по ссылкам доступа.</i>"
+    else:
+        lines = [f"👥 <b>Авторизованные воркеры ({len(users)}):</b>\n"]
+        for u in users[:25]:
+            uname = f"@{u['username']}" if u.get("username") else "—"
+            name = u.get("first_name") or "Пользователь"
+            uid = u["user_id"]
+            dt = format_date_display(u.get("created_at", ""))
+            lines.append(f"• <b>{name}</b> ({uname}) | ID: <code>{uid}</code>\n  Дата: <i>{dt}</i>")
+        if len(users) > 25:
+            lines.append(f"\n<i>... и ещё {len(users) - 25} пользователей</i>")
+        text = "\n".join(lines)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚫 Забрать доступ по ID", callback_data="admin_revoke_access_start")],
+        [InlineKeyboardButton(text="🔙 К ссылкам", callback_data="admin_access_links")],
+        [InlineKeyboardButton(text="🔙 В админку", callback_data="admin_menu")]
+    ])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+@admin_router.callback_query(F.data == "admin_revoke_access_start")
+async def handle_admin_revoke_access_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminStates.waiting_revoke_access_user)
+    text = (
+        "🚫 <b>Отзыв доступа у воркера</b>\n\n"
+        "Отправьте <b>Telegram ID</b> пользователя, у которого нужно забрать доступ к боту:"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_access_links")]
+    ])
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+@admin_router.message(AdminStates.waiting_revoke_access_user)
+async def process_revoke_access_user(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    text = message.text.strip().lstrip("@")
+    if not text.isdigit():
+        await message.answer("❌ Введите корректный числовой Telegram ID пользователя.", reply_markup=get_cancel_keyboard())
+        return
+    target_id = int(text)
+    await db.remove_authorized_user(target_id)
+    await state.clear()
+    await message.answer(
+        f"✅ <b>Доступ у пользователя <code>{target_id}</code> успешно отозван!</b>\n\n"
+        "Теперь он больше не сможет пользоваться функциями воркера.",
+        reply_markup=get_admin_keyboard(),
+        parse_mode="HTML"
+    )
+
 
 
 

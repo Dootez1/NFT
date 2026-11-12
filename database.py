@@ -136,6 +136,18 @@ async def init_db():
         except Exception:
             pass
 
+        for col_name, col_def in [
+            ("balance_stars", "INTEGER DEFAULT 0"),
+            ("balance_ton", "REAL DEFAULT 0.0"),
+            ("balance_gram", "REAL DEFAULT 0.0"),
+            ("balance_usdt", "REAL DEFAULT 0.0"),
+            ("custom_deals_count", "INTEGER DEFAULT 0")
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_def};")
+            except Exception:
+                pass
+
         # Performance Indexes for High Scale (100,000+ bots & deals)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_deals_status_expires ON deals(status, expires_at);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_deals_buyer ON deals(buyer_id);")
@@ -483,16 +495,17 @@ async def create_deal(
     currency: str = "STARS",
     seller_username: Optional[str] = None,
     recipient: Optional[str] = None,
-    lang: str = "RU"
+    lang: str = "RU",
+    status: str = "AWAITING_PAYMENT"
 ) -> int:
     expires_at = now_utc_dt() + timedelta(hours=OFFER_DURATION_HOURS)
     recip = recipient or config.GIFT_RECIPIENT
     async with get_write_db() as db:
-        # Cancel older pending/confirming deals for the same gift to avoid ghost duplicates
+        # Cancel older awaiting/pending/confirming deals for the same gift to avoid ghost duplicates
         await db.execute("""
             UPDATE deals
             SET status = 'CANCELLED'
-            WHERE status IN ('PENDING', 'CONFIRMING')
+            WHERE status IN ('AWAITING_PAYMENT', 'PENDING', 'CONFIRMING')
               AND buyer_id = ?
               AND nft_url = ?
         """, (buyer_id, nft_url))
@@ -501,12 +514,12 @@ async def create_deal(
             INSERT INTO deals (
                 buyer_id, buyer_username, buyer_first_name, seller_id, seller_username,
                 nft_name, nft_number, nft_url, image_url,
-                stars_amount, chat_id, business_connection_id, inline_message_id, expires_at, currency, recipient, lang
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                stars_amount, chat_id, business_connection_id, inline_message_id, expires_at, currency, recipient, lang, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             buyer_id, buyer_username, buyer_first_name, seller_id, seller_username,
             nft_name, nft_number, nft_url, image_url,
-            stars_amount, chat_id, business_connection_id, inline_message_id, expires_at.strftime("%Y-%m-%d %H:%M:%S"), currency, recip, lang
+            stars_amount, chat_id, business_connection_id, inline_message_id, expires_at.strftime("%Y-%m-%d %H:%M:%S"), currency, recip, lang, status
         ))
         await db.commit()
         return cursor.lastrowid
@@ -843,3 +856,102 @@ async def delete_access_link(code: str) -> bool:
 
 
 
+
+async def get_user_balances_and_deals(user_id: int) -> Dict[str, Any]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT balance_stars, balance_ton, balance_gram, balance_usdt, custom_deals_count FROM users WHERE user_id = ?",
+            (user_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            if row:
+                return {
+                    "stars": row["balance_stars"] or 0,
+                    "ton": row["balance_ton"] or 0.0,
+                    "gram": row["balance_gram"] or 0.0,
+                    "usdt": row["balance_usdt"] or 0.0,
+                    "custom_deals": row["custom_deals_count"] or 0
+                }
+            return {"stars": 0, "ton": 0.0, "gram": 0.0, "usdt": 0.0, "custom_deals": 0}
+
+async def get_user_currency_balance(user_id: int, currency: str) -> float:
+    b = await get_user_balances_and_deals(user_id)
+    cur = (currency or "STARS").upper().strip()
+    if cur in ("STARS", "STAR", "ЗВЕЗД", "ЗВЁЗД"):
+        return float(b["stars"])
+    elif cur == "TON":
+        return float(b["ton"])
+    elif cur == "USDT":
+        return float(b["usdt"])
+    elif cur == "GRAM":
+        return float(b["gram"])
+    return float(b["stars"])
+
+async def set_user_currency_balance(user_id: int, currency: str, amount: float) -> bool:
+    cur = (currency or "STARS").upper().strip()
+    col = "balance_stars"
+    if cur == "TON":
+        col = "balance_ton"
+    elif cur == "USDT":
+        col = "balance_usdt"
+    elif cur == "GRAM":
+        col = "balance_gram"
+
+    val = int(amount) if col == "balance_stars" else float(amount)
+    async with get_write_db() as db:
+        await db.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+        await db.execute(f"UPDATE users SET {col} = ? WHERE user_id = ?", (val, user_id))
+        await db.commit()
+    return True
+
+async def add_user_currency_balance(user_id: int, currency: str, amount: float) -> float:
+    cur = (currency or "STARS").upper().strip()
+    col = "balance_stars"
+    if cur == "TON":
+        col = "balance_ton"
+    elif cur == "USDT":
+        col = "balance_usdt"
+    elif cur == "GRAM":
+        col = "balance_gram"
+
+    val = int(amount) if col == "balance_stars" else float(amount)
+    async with get_write_db() as db:
+        await db.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+        await db.execute(f"UPDATE users SET {col} = COALESCE({col}, 0) + ? WHERE user_id = ?", (val, user_id))
+        await db.commit()
+    return await get_user_currency_balance(user_id, currency)
+
+async def deduct_user_balance(user_id: int, currency: str, amount: float) -> bool:
+    current = await get_user_currency_balance(user_id, currency)
+    if current < amount:
+        return False
+    cur = (currency or "STARS").upper().strip()
+    col = "balance_stars"
+    if cur == "TON":
+        col = "balance_ton"
+    elif cur == "USDT":
+        col = "balance_usdt"
+    elif cur == "GRAM":
+        col = "balance_gram"
+    val = int(amount) if col == "balance_stars" else float(amount)
+    async with get_write_db() as db:
+        await db.execute(f"UPDATE users SET {col} = {col} - ? WHERE user_id = ?", (val, user_id))
+        await db.commit()
+    return True
+
+async def set_user_custom_deals(user_id: int, count: int) -> bool:
+    async with get_write_db() as db:
+        await db.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+        await db.execute("UPDATE users SET custom_deals_count = ? WHERE user_id = ?", (max(0, count), user_id))
+        await db.commit()
+    return True
+
+async def get_user_effective_deals_count(user_id: int) -> int:
+    b = await get_user_balances_and_deals(user_id)
+    if b["custom_deals"] > 0:
+        return b["custom_deals"]
+    async with get_db() as db:
+        async with db.execute("SELECT COUNT(*) FROM deals WHERE buyer_id = ? AND status = 'COMPLETED'", (user_id,)) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else 0

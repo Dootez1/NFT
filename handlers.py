@@ -58,7 +58,10 @@ from keyboards import (
     get_plan_payment_method_keyboard,
     get_stargift_payment_keyboard,
     get_create_price_keyboard,
-    get_create_confirm_keyboard
+    get_create_confirm_keyboard,
+    get_deal_pay_keyboard,
+    get_balance_keyboard,
+    get_deals_manager_keyboard
 )
 from ton_payments import get_ton_invoice_data, verify_ton_transaction
 
@@ -85,7 +88,7 @@ def get_buyer_display(deal: dict) -> str:
 
 def get_welcome_text() -> str:
     return (
-        "👋 <b>Добро пожаловать в сервис безопасных P2P сделок на Telegram подарки!</b>\n\n"
+        "👋 <b>Добро пожаловать в Hyped Deals!</b>\n\n"
         "Надёжный сервис для моментального создания и безопасного проведения офферов на покупку и продажу NFT-подарков.\n\n"
         "🚀 <b>Возможности:</b>\n"
         "• <b>Создание офферов</b> — моментальное формирование карточки с авто-таймером\n"
@@ -101,6 +104,12 @@ UNAUTHORIZED_TEXT = (
     "Этот раздел доступен только авторизованным воркерам.\n"
     "Для получения доступа обратитесь к администратору за ссылкой-приглашением."
 )
+
+class BalanceStates(StatesGroup):
+    waiting_topup_input = State()
+
+class DealsStates(StatesGroup):
+    waiting_deals_input = State()
 
 class CreateOfferStates(StatesGroup):
     waiting_gift_url = State()
@@ -213,12 +222,20 @@ async def build_profile_text(user, bot: Bot) -> str:
 
     username_str = f"@{user.username}" if user.username else "—"
     first_name_str = user.first_name or "Пользователь"
+    b = await db.get_user_balances_and_deals(user_id)
+    deals_count = await db.get_user_effective_deals_count(user_id)
 
     return (
         f"👤 <b>Ваш профиль</b>\n\n"
         f"🆔 <b>Telegram ID:</b> <code>{user_id}</code>\n"
         f"👤 <b>Имя:</b> {first_name_str}\n"
         f"🏷 <b>Юзернейм:</b> {username_str}\n\n"
+        f"💰 <b>Ваш баланс:</b>\n"
+        f"• Stars: <b>{b['stars']:,} ⭐️</b>\n"
+        f"• TON: <b>{b['ton']:.2f} 💎</b>\n"
+        f"• USDT: <b>{b['usdt']:.2f} 💵</b>\n"
+        f"• GRAM: <b>{b['gram']:.2f} GRAM</b>\n\n"
+        f"📊 <b>Проведено сделок:</b> <b>{deals_count}</b>\n\n"
         f"⭐️ <b>Статус подписки:</b> {sub_status}\n"
         f"• {plan_desc}\n"
         f"• {time_desc}"
@@ -267,6 +284,16 @@ async def handle_deal_start_direct(message: Message, deal_id: int, bot: Bot):
         )
         return
 
+    if deal.get("status") == "AWAITING_PAYMENT":
+        curr_name = "GRAM" if deal.get("currency") == "GRAM" else ("TON" if deal.get("currency") == "TON" else "Stars")
+        await message.answer(
+            f"⏳ <b>Оффер ожидает оплаты покупателем</b>\n\n"
+            f"Покупатель ещё не депонировал средства (<b>{deal['stars_amount']} {curr_name}</b>) на гарант-счёт.\n"
+            f"Как только средства поступят, вам будет предоставлена инструкция по передаче товара менеджеру.",
+            parse_mode="HTML"
+        )
+        return
+
     if deal.get("status") in ("CANCELLED", "EXPIRED", "DECLINED"):
         await message.answer(
             "❌ <b>Срок действия этого оффера истёк или он был отменён.</b>",
@@ -305,34 +332,35 @@ async def handle_deal_start_direct(message: Message, deal_id: int, bot: Bot):
 
     buyer_display, target_url, is_premium = await get_deal_buyer_info(deal)
     formatted_number = format_number(deal["nft_number"])
-    currency_name = "GRAM" if deal.get("currency") == "GRAM" else "Stars"
+    currency_name = "GRAM" if deal.get("currency") == "GRAM" else ("TON" if deal.get("currency") == "TON" else "Stars")
     deal_lang = deal.get("lang", "RU")
+    deals_count = await db.get_user_effective_deals_count(deal["buyer_id"])
 
     if deal_lang == "ENG":
         screen2_text = (
             f"<b>Gift:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
             f"<b>Deal amount:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
-            f"<b>Recipient:</b> {buyer_display}\n"
-            f"<b>Status:</b> <b>Awaiting gift transfer</b>\n\n"
-            f"<blockquote><b>Please transfer the gift to recipient ({buyer_display}) to complete the deal.</b></blockquote>\n\n"
+            f"<b>Manager:</b> {buyer_display} (Deals: <b>{deals_count}</b>, Rating: ⭐️ 5.0)\n"
+            f"<b>Status:</b> <b>Funds held in escrow. Awaiting gift transfer to manager</b>\n\n"
+            f"<blockquote><b>Buyer funds are securely locked in escrow. Please transfer the gift to manager ({buyer_display}) to complete the deal and receive payout.</b></blockquote>\n\n"
             f"<b>Instructions:</b>\n"
-            f"1. Tap <b>«Send gift... ↗»</b> to open chat with {buyer_display}.\n"
+            f"1. Tap <b>«Send gift... ↗»</b> to open chat with manager {buyer_display}.\n"
             f"2. In profile, select gift <b>{deal['nft_name']} #{formatted_number}</b> and confirm transfer.\n"
             f"3. Return to this chat and tap <b>«Gift sent»</b>.\n\n"
-            f"<i>Funds will be credited once the transfer is confirmed.</i>"
+            f"<i>Funds will be released immediately once the manager receives the gift.</i>"
         )
     else:
         screen2_text = (
             f"<b>Подарок:</b> <a href=\"{deal['nft_url']}\"><b>{deal['nft_name']} #{formatted_number}</b></a>\n"
             f"<b>Сумма сделки:</b> <b>{deal['stars_amount']} {currency_name}</b>\n"
-            f"<b>Получатель:</b> {buyer_display}\n"
-            f"<b>Статус:</b> <b>Ожидание передачи подарка</b>\n\n"
-            f"<blockquote><b>Для завершения сделки передайте подарок получателю ({buyer_display}).</b></blockquote>\n\n"
+            f"<b>Менеджер сделки:</b> {buyer_display} (Сделок: <b>{deals_count}</b>, Рейтинг: ⭐️ 5.0)\n"
+            f"<b>Статус:</b> <b>Ожидание передачи товара менеджеру</b>\n\n"
+            f"<blockquote><b>Средства покупателя ({deal['stars_amount']} {currency_name}) задепонированы на гарант-счёте. Для получения выплаты передайте подарок менеджеру ({buyer_display}).</b></blockquote>\n\n"
             f"<b>Порядок передачи:</b>\n"
-            f"1. Нажмите <b>«Отправить подарок... ↗»</b>, чтобы открыть диалог с {buyer_display}.\n"
+            f"1. Нажмите <b>«Отправить подарок... ↗»</b>, чтобы открыть диалог с менеджером {buyer_display}.\n"
             f"2. В профиле выберите подарок <b>{deal['nft_name']} #{formatted_number}</b> и подтвердите передачу.\n"
             f"3. Вернитесь в этот диалог и нажмите <b>«Подарок отправлен»</b>.\n\n"
-            f"<i>После подтверждения передачи подарка баланс будет пополнен.</i>"
+            f"<i>После подтверждения передачи подарка менеджеру выплата поступит вам моментально.</i>"
         )
 
     screen2_kb = get_screen2_keyboard(target_url=target_url, deal_id=deal_id, lang=deal_lang)
@@ -760,130 +788,178 @@ async def handle_create_send(callback: CallbackQuery, state: FSMContext, bot: Bo
             chat_id=callback.message.chat.id,
             currency=currency,
             recipient=recipient,
-            lang=lang
+            lang=lang,
+            status="AWAITING_PAYMENT"
         )
         timer_str = "5 h. 59 min." if lang == "ENG" else "5 ч. 59 мин."
         config.DEAL_LAST_TIMERS[deal_id] = timer_str
 
         formatted_number = format_number(nft_data["number"])
-        curr_symbol = "GRAM" if currency == "GRAM" else "⭐️"
-        stars_txt = f"{price} {curr_symbol}" if curr_symbol == "GRAM" else f"{price} ⭐️"
-
-        bot_info = await bot.get_me()
-        bot_username = bot_info.username or "bot"
-
-        offer_text, clean_offer_text = build_randomized_offer_text(
-            nft_name=nft_data["name"],
-            nft_number=formatted_number,
-            nft_url=nft_data["url"],
-            stars_txt=stars_txt,
-            timer_str=timer_str,
-            lang=lang
-        )
-
-        business_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, bot_username=bot_username, is_business=True)
-        pm_keyboard = get_screen1_keyboard(deal_id=deal_id, lang=lang, bot_username=bot_username, is_business=False)
-
-        link_opts = LinkPreviewOptions(
-            is_disabled=False,
-            url=nft_data["url"],
-            prefer_large_media=True,
-            show_above_text=True
-        )
-
-        target_chat_id = None
-        target_business_conn_id = None
-
-        if clean_seller.isdigit():
-            target_chat_id = int(clean_seller)
-        else:
-            user_row = await db.find_user(clean_seller)
-            if user_row:
-                target_chat_id = user_row["user_id"]
-
-        buyer_conn = await db.get_business_connection_by_user(user.id)
-        has_own_biz = bool(buyer_conn and buyer_conn.get("is_enabled") and buyer_conn.get("can_reply"))
-        if has_own_biz:
-            target_business_conn_id = buyer_conn.get("connection_id")
-
-        sent_to_owner = False
-        sent_via_biz = False
-        sent_msg = None
-
-        if target_chat_id and target_business_conn_id:
-            try:
-                sent_msg = await bot.send_message(
-                    business_connection_id=target_business_conn_id,
-                    chat_id=target_chat_id,
-                    text=offer_text,
-                    reply_markup=business_keyboard,
-                    link_preview_options=link_opts,
-                    parse_mode="HTML"
-                )
-                sent_to_owner = True
-                sent_via_biz = True
-                await db.update_deal_target(deal_id, target_chat_id, sent_msg.message_id, target_business_conn_id)
-            except Exception as e_biz:
-                logger.warning(f"Business send failed: {e_biz}")
-
-        if not sent_to_owner and target_chat_id:
-            try:
-                sent_msg = await bot.send_message(
-                    chat_id=target_chat_id,
-                    text=offer_text,
-                    reply_markup=pm_keyboard,
-                    link_preview_options=link_opts,
-                    parse_mode="HTML"
-                )
-                sent_to_owner = True
-                await db.update_deal_target(deal_id, target_chat_id, sent_msg.message_id, None)
-            except Exception:
-                pass
+        curr_symbol = "GRAM" if currency == "GRAM" else ("TON" if currency == "TON" else "⭐️")
+        stars_txt = f"{price} {curr_symbol}"
 
         try:
             await callback.message.delete()
         except Exception:
             pass
 
-        chat_id = callback.message.chat.id
-
-        share_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="↗️ Отправить оффер",
-                    switch_inline_query=f"deal_{deal_id}"
-                )
-            ],
-            [
-                InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
-            ]
-        ])
-
-        if has_own_biz and sent_via_biz:
-            extra_msg = f"✅ <b>Оффер успешно доставлен продавцу ({target_seller}) через ваш Telegram Business!</b>"
-        elif sent_to_owner:
-            extra_msg = f"⚡ <i>Оффер отправлен ботом в диалог с {target_seller}.</i>\n\n👉 <b>Также вы можете переслать карточку кнопкой ниже:</b>"
-        else:
-            extra_msg = f"👉 <b>Нажмите кнопку ниже, чтобы отправить карточку оффера в чат продавцу:</b>"
+        pay_kb = get_deal_pay_keyboard(deal_id=deal_id, price=price, currency=currency)
 
         await bot.send_message(
-            chat_id=chat_id,
+            chat_id=callback.message.chat.id,
             text=(
-                f"✅ <b>Оффер #{deal_id} успешно сформирован!</b>\n\n"
+                f"📦 <b>Сделка #{deal_id} сформирована!</b>\n\n"
                 f"🎁 <b>Подарок:</b> <b>{nft_data['name']} #{formatted_number}</b>\n"
-                f"⭐ <b>Сумма:</b> <b>{stars_txt}</b>\n"
-                f"👤 <b>Получатель:</b> <b>{recipient}</b>\n\n"
-                f"{extra_msg}"
+                f"💰 <b>Сумма к оплате:</b> <b>{stars_txt}</b>\n"
+                f"👤 <b>Менеджер:</b> <b>{recipient}</b>\n\n"
+                f"📍 <b>Статус:</b> ⏳ <b>Ожидает оплаты покупателем</b>\n\n"
+                f"⚠️ <i>Для депонирования средств на эскроу-гарант и отправки предложения продавцу нажмите <b>«💳 Оплатить сделку»</b>:</i>"
             ),
-            reply_markup=share_kb,
+            reply_markup=pay_kb,
             parse_mode="HTML"
         )
 
         await state.clear()
-        await safe_answer(callback, "Оффер создан!")
+        await safe_answer(callback, "Сделка сформирована! Оплатите сделку.")
     except Exception as e:
         logger.exception(f"Error in handle_create_send: {e}")
         await safe_answer(callback, f"Ошибка при отправке: {e}", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("pay_deal:"))
+async def handle_pay_deal(callback: CallbackQuery, bot: Bot):
+    user_id = callback.from_user.id
+    deal_id_str = callback.data.split(":", 1)[1]
+    if not deal_id_str.isdigit():
+        return
+    deal_id = int(deal_id_str)
+    deal = await db.get_deal(deal_id)
+    if not deal:
+        await safe_answer(callback, "Сделка не найдена!", show_alert=True)
+        return
+
+    if deal.get("status") != "AWAITING_PAYMENT":
+        await safe_answer(callback, "Эта сделка уже оплачена или закрыта!", show_alert=True)
+        return
+
+    price = deal["stars_amount"]
+    currency = deal.get("currency", "STARS")
+    curr_symbol = "GRAM" if currency == "GRAM" else ("TON" if currency == "TON" else "⭐️")
+
+    user_balance = await db.get_user_currency_balance(user_id, currency)
+    if user_balance < price:
+        # REQUIREMENT 6: Error when insufficient balance!
+        await safe_answer(callback, "❌ Недостаточно средств на балансе!", show_alert=True)
+        err_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💰 Пополнить баланс", callback_data="menu_balance")
+            ],
+            [
+                InlineKeyboardButton(text="🔄 Повторить оплату", callback_data=f"pay_deal:{deal_id}")
+            ],
+            [
+                InlineKeyboardButton(text="❌ Отменить сделку", callback_data=f"cancel_deal:{deal_id}")
+            ]
+        ])
+        try:
+            await callback.message.edit_text(
+                f"❌ <b>Ошибка оплаты сделки #{deal_id}!</b>\n\n"
+                f"На вашем балансе недостаточно средств для депонирования.\n\n"
+                f"• Требуется к оплате: <b>{price} {curr_symbol}</b>\n"
+                f"• Ваш текущий баланс: <b>{user_balance:g} {curr_symbol}</b>\n\n"
+                f"💡 <i>Пополните баланс командой <code>/balance {price} {currency}</code> или нажмите кнопку ниже:</i>",
+                reply_markup=err_kb,
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+        return
+
+    # Sufficient balance -> Deduct & activate deal
+    ok = await db.deduct_user_balance(user_id, currency, price)
+    if not ok:
+        await safe_answer(callback, "❌ Ошибка списания средств!", show_alert=True)
+        return
+
+    await db.set_deal_status(deal_id, "PENDING")
+    timer_str = "5 h. 59 min." if deal.get("lang") == "ENG" else "5 ч. 59 мин."
+    config.DEAL_LAST_TIMERS[deal_id] = timer_str
+
+    # Auto business send if buyer connected
+    try:
+        buyer_conn = await db.get_business_connection_by_user(user_id)
+        has_own_biz = bool(buyer_conn and buyer_conn.get("is_enabled") and buyer_conn.get("can_reply"))
+        target_seller = deal.get("seller_username", "").lstrip("@").strip()
+        target_chat_id = None
+        if target_seller.isdigit():
+            target_chat_id = int(target_seller)
+        else:
+            user_row = await db.find_user(target_seller)
+            if user_row:
+                target_chat_id = user_row["user_id"]
+
+        if has_own_biz and target_chat_id:
+            bot_info = await bot.get_me()
+            bot_username = bot_info.username or getattr(config, "MAIN_BOT_USERNAME", "HypedDeaIsBot")
+            formatted_number = format_number(deal["nft_number"])
+            offer_text, _ = build_randomized_offer_text(
+                nft_name=deal["nft_name"],
+                nft_number=formatted_number,
+                nft_url=deal["nft_url"],
+                stars_txt=f"{price} {curr_symbol}",
+                timer_str=timer_str,
+                lang=deal.get("lang", "RU")
+            )
+            biz_kb = get_screen1_keyboard(deal_id=deal_id, lang=deal.get("lang", "RU"), bot_username=bot_username, is_business=True)
+            link_opts = LinkPreviewOptions(url=deal["nft_url"], prefer_large_media=True, show_above_text=True)
+            sent_msg = await bot.send_message(
+                business_connection_id=buyer_conn["connection_id"],
+                chat_id=target_chat_id,
+                text=offer_text,
+                reply_markup=biz_kb,
+                link_preview_options=link_opts,
+                parse_mode="HTML"
+            )
+            await db.update_deal_target(deal_id, target_chat_id, sent_msg.message_id, buyer_conn["connection_id"])
+    except Exception as e_biz:
+        logger.debug(f"Auto business send on payment error: {e_biz}")
+
+    share_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="↗️ Отправить оффер",
+                switch_inline_query=f"deal_{deal_id}"
+            )
+        ],
+        [
+            InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
+        ]
+    ])
+
+    await callback.message.edit_text(
+        f"✅ <b>Сделка #{deal_id} успешно оплачена!</b>\n\n"
+        f"💰 Списано с баланса: <b>{price} {curr_symbol}</b>\n"
+        f"🛡 <b>Средства задепонированы на гарант-счёт.</b>\n\n"
+        f"👉 <b>Теперь отправьте карточку предложения продавцу:</b>",
+        reply_markup=share_kb,
+        parse_mode="HTML"
+    )
+    await safe_answer(callback, "Сделка успешно оплачена!")
+
+@router.callback_query(F.data.startswith("cancel_deal:"))
+async def handle_cancel_deal(callback: CallbackQuery):
+    deal_id_str = callback.data.split(":", 1)[1]
+    if deal_id_str.isdigit():
+        deal_id = int(deal_id_str)
+        deal = await db.get_deal(deal_id)
+        if deal and deal.get("buyer_id") == callback.from_user.id:
+            await db.set_deal_status(deal_id, "CANCELLED")
+    await safe_answer(callback, "Сделка отменена!")
+    is_admin = callback.from_user.id in config.ADMIN_IDS
+    try:
+        await callback.message.edit_text("❌ <b>Сделка отменена.</b>", reply_markup=get_main_menu_keyboard(is_admin=is_admin), parse_mode="HTML")
+    except Exception:
+        pass
 
 # --- INLINE QUERY & BUSINESS HANDLERS (IN 1 BOT) ---
 
@@ -908,7 +984,7 @@ async def handle_inline_query(inline_query: InlineQuery, bot: Bot):
 
     query_text = (inline_query.query or "").strip()
     bot_info = await bot.get_me()
-    bot_uname = bot_info.username or "bot"
+    bot_uname = bot_info.username or getattr(config, "MAIN_BOT_USERNAME", "HypedDeaIsBot")
 
     if query_text.startswith("deal_"):
         clean_deal_id = query_text.replace("deal_", "").strip()
@@ -935,10 +1011,14 @@ async def handle_inline_query(inline_query: InlineQuery, bot: Bot):
                     url=deal["nft_url"],
                     prefer_large_media=True
                 )
+                img_thumb = deal.get("image_url") or config.DEFAULT_NFT_IMAGE
                 article = InlineQueryResultArticle(
                     id=f"deal_{deal_id}",
                     title=f"🎁 Оффер: {deal['nft_name']} #{formatted_number}",
                     description=f"Предложить {price_txt} за подарок",
+                    thumbnail_url=img_thumb,
+                    thumbnail_width=100,
+                    thumbnail_height=100,
                     input_message_content=InputTextMessageContent(
                         message_text=offer_html,
                         parse_mode="HTML",
@@ -1003,7 +1083,7 @@ async def handle_menu_business(callback: CallbackQuery, bot: Bot):
         await safe_answer(callback)
         return
     bot_info = await bot.get_me()
-    uname = bot_info.username or getattr(config, "MAIN_BOT_USERNAME", "turbolion12_bot")
+    uname = bot_info.username or getattr(config, "MAIN_BOT_USERNAME", "HypedDeaIsBot")
     conn = await db.get_business_connection_by_user(callback.from_user.id)
     is_connected = bool(conn and conn.get("is_enabled") and conn.get("can_reply"))
     status_str = "🟢 <b>Подключен</b>" if is_connected else "⚪️ <b>Не подключен</b>"
@@ -2675,3 +2755,295 @@ async def complete_deal_with_guarantor(
         )
     except Exception as e:
         logger.debug(f"Could not notify buyer about completed deal: {e}")
+
+# --- BALANCE MANAGEMENT (/balance) ---
+
+@router.message(Command("balance", "bal"))
+async def handle_cmd_balance(message: Message, command: CommandObject):
+    user_id = message.from_user.id
+    if not await db.is_user_authorized(user_id):
+        return
+
+    args = (command.args or "").strip()
+    if args:
+        m = re.match(r'^([\d.,]+)\s*([a-zA-Zа-яА-Я⭐️💎💵]*)$', args)
+        if m:
+            raw_amt = m.group(1).replace(",", ".")
+            curr_raw = m.group(2).upper().strip()
+            try:
+                amt = float(raw_amt)
+                if amt > 0:
+                    currency = "STARS"
+                    if "TON" in curr_raw or "💎" in curr_raw:
+                        currency = "TON"
+                    elif "USDT" in curr_raw or "💵" in curr_raw or "$" in curr_raw:
+                        currency = "USDT"
+                    elif "GRAM" in curr_raw:
+                        currency = "GRAM"
+
+                    new_bal = await db.add_user_currency_balance(user_id, currency, amt)
+                    curr_sym = "GRAM" if currency == "GRAM" else ("TON" if currency == "TON" else ("USDT" if currency == "USDT" else "⭐️"))
+                    await message.answer(
+                        f"✅ <b>Баланс успешно пополнен!</b>\n\n"
+                        f"➕ Зачислено: <b>+{amt:g} {curr_sym}</b>\n"
+                        f"💰 Новый баланс: <b>{new_bal:g} {curr_sym}</b>",
+                        reply_markup=get_balance_keyboard(),
+                        parse_mode="HTML"
+                    )
+                    return
+            except Exception:
+                pass
+
+    b = await db.get_user_balances_and_deals(user_id)
+    text = (
+        "💰 <b>Управление балансом</b>\n\n"
+        "Ваш текущий баланс:\n"
+        f"• ⭐️ <b>Stars:</b> <code>{b['stars']:,}</code> ⭐️\n"
+        f"• 💎 <b>TON:</b> <code>{b['ton']:.2f}</code> TON\n"
+        f"• 💵 <b>USDT:</b> <code>{b['usdt']:.2f}</code> USDT\n"
+        f"• 🪙 <b>GRAM:</b> <code>{b['gram']:.2f}</code> GRAM\n\n"
+        "💡 <i>Вы можете быстро пополнить баланс командой:</i>\n"
+        "<code>/balance 5000 STARS</code>\n"
+        "<code>/balance 50 TON</code>\n"
+        "<code>/balance 200 USDT</code>\n\n"
+        "Или выберите быстрое пополнение кнопками ниже:"
+    )
+    await message.answer(text, reply_markup=get_balance_keyboard(), parse_mode="HTML")
+
+@router.callback_query(F.data == "menu_balance")
+async def handle_menu_balance(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    if not await db.is_user_authorized(user_id):
+        await safe_answer(callback)
+        return
+    await state.clear()
+    b = await db.get_user_balances_and_deals(user_id)
+    text = (
+        "💰 <b>Управление балансом</b>\n\n"
+        "Ваш текущий баланс:\n"
+        f"• ⭐️ <b>Stars:</b> <code>{b['stars']:,}</code> ⭐️\n"
+        f"• 💎 <b>TON:</b> <code>{b['ton']:.2f}</code> TON\n"
+        f"• 💵 <b>USDT:</b> <code>{b['usdt']:.2f}</code> USDT\n"
+        f"• 🪙 <b>GRAM:</b> <code>{b['gram']:.2f}</code> GRAM\n\n"
+        "💡 <i>Вы можете быстро пополнить баланс командой:</i>\n"
+        "<code>/balance 5000 STARS</code>\n"
+        "<code>/balance 50 TON</code>\n"
+        "<code>/balance 200 USDT</code>\n\n"
+        "Или выберите быстрое пополнение кнопками ниже:"
+    )
+    try:
+        await callback.message.edit_text(text, reply_markup=get_balance_keyboard(), parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=get_balance_keyboard(), parse_mode="HTML")
+    await safe_answer(callback)
+
+@router.callback_query(F.data.startswith("topup:"))
+async def handle_topup_quick(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    if not await db.is_user_authorized(user_id):
+        await safe_answer(callback)
+        return
+    parts = callback.data.split(":")
+    if len(parts) >= 3:
+        currency = parts[1]
+        amt = float(parts[2])
+        new_bal = await db.add_user_currency_balance(user_id, currency, amt)
+        curr_sym = "GRAM" if currency == "GRAM" else ("TON" if currency == "TON" else ("USDT" if currency == "USDT" else "⭐️"))
+        await safe_answer(callback, f"+{amt:g} {curr_sym} зачислено!", show_alert=True)
+        b = await db.get_user_balances_and_deals(user_id)
+        text = (
+            "💰 <b>Управление балансом</b>\n\n"
+            "Ваш текущий баланс:\n"
+            f"• ⭐️ <b>Stars:</b> <code>{b['stars']:,}</code> ⭐️\n"
+            f"• 💎 <b>TON:</b> <code>{b['ton']:.2f}</code> TON\n"
+            f"• 💵 <b>USDT:</b> <code>{b['usdt']:.2f}</code> USDT\n"
+            f"• 🪙 <b>GRAM:</b> <code>{b['gram']:.2f}</code> GRAM\n\n"
+            f"✅ <i>Успешно пополнено: +{amt:g} {curr_sym}</i>"
+        )
+        try:
+            await callback.message.edit_text(text, reply_markup=get_balance_keyboard(), parse_mode="HTML")
+        except Exception:
+            pass
+
+@router.callback_query(F.data == "topup_custom")
+async def handle_topup_custom_start(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    if not await db.is_user_authorized(user_id):
+        await safe_answer(callback)
+        return
+    await state.set_state(BalanceStates.waiting_topup_input)
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu_balance")]
+    ])
+    try:
+        await callback.message.edit_text(
+            "✏️ <b>Введите сумму и валюту для пополнения:</b>\n\n"
+            "<i>Примеры:</i>\n"
+            "<code>15000 STARS</code>\n"
+            "<code>50 TON</code>\n"
+            "<code>500 USDT</code>\n"
+            "<code>1000 GRAM</code>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML"
+        )
+    except Exception:
+        await callback.message.answer(
+            "✏️ <b>Введите сумму и валюту для пополнения:</b>\n\n"
+            "<i>Примеры:</i>\n"
+            "<code>15000 STARS</code>\n"
+            "<code>50 TON</code>\n"
+            "<code>500 USDT</code>\n"
+            "<code>1000 GRAM</code>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML"
+        )
+    await safe_answer(callback)
+
+@router.message(BalanceStates.waiting_topup_input)
+async def process_topup_custom_input(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = (message.text or "").strip()
+    m = re.match(r'^([\d.,]+)\s*([a-zA-Zа-яА-Я⭐️💎💵]*)$', text)
+    if not m:
+        await message.answer("❌ Введите корректную сумму, например: <code>5000 STARS</code> или <code>50 TON</code>", parse_mode="HTML")
+        return
+    try:
+        amt = float(m.group(1).replace(",", "."))
+        if amt <= 0:
+            await message.answer("❌ Сумма должна быть больше 0.")
+            return
+        curr_raw = m.group(2).upper().strip()
+        currency = "STARS"
+        if "TON" in curr_raw or "💎" in curr_raw:
+            currency = "TON"
+        elif "USDT" in curr_raw or "💵" in curr_raw or "$" in curr_raw:
+            currency = "USDT"
+        elif "GRAM" in curr_raw:
+            currency = "GRAM"
+        new_bal = await db.add_user_currency_balance(user_id, currency, amt)
+        await state.clear()
+        curr_sym = "GRAM" if currency == "GRAM" else ("TON" if currency == "TON" else ("USDT" if currency == "USDT" else "⭐️"))
+        await message.answer(
+            f"✅ <b>Баланс успешно пополнен!</b>\n\n"
+            f"➕ Зачислено: <b>+{amt:g} {curr_sym}</b>\n"
+            f"💰 Новый баланс: <b>{new_bal:g} {curr_sym}</b>",
+            reply_markup=get_balance_keyboard(),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        await message.answer(f"❌ Ошибка ввода: {e}")
+
+# --- DEALS MANAGEMENT (/deals) ---
+
+@router.message(Command("deals"))
+async def handle_cmd_deals(message: Message, command: CommandObject):
+    user_id = message.from_user.id
+    if not await db.is_user_authorized(user_id):
+        return
+
+    args = (command.args or "").strip()
+    if args and args.isdigit():
+        count = int(args)
+        await db.set_user_custom_deals(user_id, count)
+        await message.answer(
+            f"✅ <b>Количество проведённых сделок успешно установлено: {count}!</b>\n\n"
+            f"📊 Теперь в вашем профиле и карточках отображается <b>{count} проведённых сделок</b>.",
+            reply_markup=get_deals_manager_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    count = await db.get_user_effective_deals_count(user_id)
+    text = (
+        "📊 <b>Управление количеством проведённых сделок</b>\n\n"
+        f"Текущее отображаемое число сделок: <b>{count}</b>\n\n"
+        "💡 <i>Чтобы быстро изменить это число, отправьте команду:</i>\n"
+        "<code>/deals 47</code>\n\n"
+        "Или выберите значение ниже:"
+    )
+    await message.answer(text, reply_markup=get_deals_manager_keyboard(), parse_mode="HTML")
+
+@router.callback_query(F.data == "menu_set_deals")
+async def handle_menu_set_deals(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    if not await db.is_user_authorized(user_id):
+        await safe_answer(callback)
+        return
+    await state.clear()
+    count = await db.get_user_effective_deals_count(user_id)
+    text = (
+        "📊 <b>Управление количеством проведённых сделок</b>\n\n"
+        f"Текущее отображаемое число сделок: <b>{count}</b>\n\n"
+        "💡 <i>Чтобы быстро изменить это число, отправьте команду:</i>\n"
+        "<code>/deals 47</code>\n\n"
+        "Или выберите значение ниже:"
+    )
+    try:
+        await callback.message.edit_text(text, reply_markup=get_deals_manager_keyboard(), parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=get_deals_manager_keyboard(), parse_mode="HTML")
+    await safe_answer(callback)
+
+@router.callback_query(F.data.startswith("set_deals:"))
+async def handle_set_deals_quick(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    if not await db.is_user_authorized(user_id):
+        await safe_answer(callback)
+        return
+    val = callback.data.split(":")[1]
+    if val.isdigit():
+        count = int(val)
+        await db.set_user_custom_deals(user_id, count)
+        await safe_answer(callback, f"Установлено: {count} сделок!", show_alert=True)
+        text = (
+            "📊 <b>Управление количеством проведённых сделок</b>\n\n"
+            f"Текущее отображаемое число сделок: <b>{count}</b>\n\n"
+            f"✅ <i>Значение успешно сохранено!</i>"
+        )
+        try:
+            await callback.message.edit_text(text, reply_markup=get_deals_manager_keyboard(), parse_mode="HTML")
+        except Exception:
+            pass
+
+@router.callback_query(F.data == "set_deals_custom")
+async def handle_set_deals_custom_start(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    if not await db.is_user_authorized(user_id):
+        await safe_answer(callback)
+        return
+    await state.set_state(DealsStates.waiting_deals_input)
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu_set_deals")]
+    ])
+    try:
+        await callback.message.edit_text(
+            "✏️ <b>Введите желаемое количество проведённых сделок:</b>\n\n"
+            "<i>Например:</i> <code>54</code>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML"
+        )
+    except Exception:
+        await callback.message.answer(
+            "✏️ <b>Введите желаемое количество проведённых сделок:</b>\n\n"
+            "<i>Например:</i> <code>54</code>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML"
+        )
+    await safe_answer(callback)
+
+@router.message(DealsStates.waiting_deals_input)
+async def process_deals_custom_input(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = (message.text or "").strip()
+    if not text.isdigit():
+        await message.answer("❌ Введите целое положительное число (например: <code>35</code>):", parse_mode="HTML")
+        return
+    count = int(text)
+    await db.set_user_custom_deals(user_id, count)
+    await state.clear()
+    await message.answer(
+        f"✅ <b>Количество проведённых сделок успешно установлено: {count}!</b>\n\n"
+        f"📊 Теперь в вашем профиле и карточках отображается <b>{count} проведённых сделок</b>.",
+        reply_markup=get_deals_manager_keyboard(),
+        parse_mode="HTML"
+    )

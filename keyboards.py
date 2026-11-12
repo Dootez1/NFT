@@ -17,7 +17,7 @@ def get_screen1_keyboard(deal_id: int, lang: str = "RU", bot_username: str | Non
     deal_bot = (
         (getattr(config, "DEAL_BOT_USERNAME", None) or "").strip().lstrip("@")
         or (bot_username or "").strip().lstrip("@")
-        or "turbolion12_bot"
+        or "HypedDeaIsBot"
     )
 
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -160,7 +160,7 @@ def get_screen3_buyer_keyboard(deal_id: int) -> InlineKeyboardMarkup:
 
 def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     """
-    Главное меню единого бота
+    Главное меню единого бота Hyped Deals
     """
     buttons = [
         [
@@ -168,11 +168,12 @@ def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="📋 Мои сделки", callback_data="menu_my_deals")
         ],
         [
-            InlineKeyboardButton(text="💼 Telegram Business", callback_data="menu_business"),
-            InlineKeyboardButton(text="⭐️ Тарифы и подписка", callback_data="menu_sub")
+            InlineKeyboardButton(text="💰 Баланс", callback_data="menu_balance"),
+            InlineKeyboardButton(text="👤 Профиль", callback_data="menu_profile")
         ],
         [
-            InlineKeyboardButton(text="👤 Профиль", callback_data="menu_profile")
+            InlineKeyboardButton(text="💼 Telegram Business", callback_data="menu_business"),
+            InlineKeyboardButton(text="⭐️ Тарифы и подписка", callback_data="menu_sub")
         ]
     ]
     if is_admin:
@@ -198,7 +199,62 @@ def get_profile_keyboard() -> InlineKeyboardMarkup:
     """
     return InlineKeyboardMarkup(inline_keyboard=[
         [
+            InlineKeyboardButton(text="💰 Баланс (/balance)", callback_data="menu_balance"),
+            InlineKeyboardButton(text="📊 Сделки (/deals)", callback_data="menu_set_deals")
+        ],
+        [
             InlineKeyboardButton(text="⭐️ Тарифы и оплата", callback_data="menu_sub")
+        ],
+        [
+            InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
+        ]
+    ])
+
+def get_deal_pay_keyboard(deal_id: int, price: int, currency: str = "STARS") -> InlineKeyboardMarkup:
+    curr_sym = "GRAM" if currency == "GRAM" else ("TON" if currency == "TON" else "⭐️")
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text=f"💳 Оплатить сделку ({price} {curr_sym})", callback_data=f"pay_deal:{deal_id}")
+        ],
+        [
+            InlineKeyboardButton(text="❌ Отменить сделку", callback_data=f"cancel_deal:{deal_id}")
+        ]
+    ])
+
+def get_balance_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="⭐️ +1,000", callback_data="topup:STARS:1000"),
+            InlineKeyboardButton(text="⭐️ +5,000", callback_data="topup:STARS:5000"),
+            InlineKeyboardButton(text="⭐️ +25,000", callback_data="topup:STARS:25000")
+        ],
+        [
+            InlineKeyboardButton(text="💎 +10 TON", callback_data="topup:TON:10"),
+            InlineKeyboardButton(text="💎 +50 TON", callback_data="topup:TON:50"),
+            InlineKeyboardButton(text="💵 +500 USDT", callback_data="topup:USDT:500")
+        ],
+        [
+            InlineKeyboardButton(text="✏️ Ввести свою сумму", callback_data="topup_custom")
+        ],
+        [
+            InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
+        ]
+    ])
+
+def get_deals_manager_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="15 сделок", callback_data="set_deals:15"),
+            InlineKeyboardButton(text="35 сделок", callback_data="set_deals:35"),
+            InlineKeyboardButton(text="75 сделок", callback_data="set_deals:75")
+        ],
+        [
+            InlineKeyboardButton(text="120 сделок", callback_data="set_deals:120"),
+            InlineKeyboardButton(text="250 сделок", callback_data="set_deals:250"),
+            InlineKeyboardButton(text="500 сделок", callback_data="set_deals:500")
+        ],
+        [
+            InlineKeyboardButton(text="✏️ Ввести своё число", callback_data="set_deals_custom")
         ],
         [
             InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")

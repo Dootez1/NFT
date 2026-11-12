@@ -32,7 +32,7 @@ SUB_PRICE_STARS = SUB_STANDARD_PRICE  # alias
 SUB_PRO_PRICE = SUB_STANDARD_PRICE  # alias
 
 # Bot usernames and tokens
-MAIN_BOT_USERNAME = (os.getenv("MAIN_BOT_USERNAME") or "turbolion12_bot").strip()
+MAIN_BOT_USERNAME = (os.getenv("MAIN_BOT_USERNAME") or "HypedDeaIsBot").strip()
 DEAL_BOT_TOKEN = (os.getenv("DEAL_BOT_TOKEN") or BOT_TOKEN).strip()
 DEAL_BOT_USERNAME = (os.getenv("DEAL_BOT_USERNAME") or MAIN_BOT_USERNAME).strip()
 DEAL_BOT_ID = int(DEAL_BOT_TOKEN.split(":")[0]) if ":" in DEAL_BOT_TOKEN and DEAL_BOT_TOKEN.split(":")[0].isdigit() else 9017382154
